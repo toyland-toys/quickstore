@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -30,6 +31,7 @@ B2_APPLICATION_KEY = os.environ.get("B2_APPLICATION_KEY", "")
 B2_REGION = os.environ.get("B2_REGION", "us-east-005")
 B2_BUCKET = os.environ.get("B2_BUCKET", "quicksell")
 B2_ENDPOINT_URL = os.environ.get("B2_ENDPOINT_URL", "https://s3.us-east-005.backblazeb2.com")
+BACKEND_PUBLIC_URL = os.environ.get("BACKEND_PUBLIC_URL", "").rstrip("/")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -52,43 +54,50 @@ def get_b2_client():
     )
 
 def build_b2_public_url(key: str) -> str:
-    return f"{B2_ENDPOINT_URL}/{B2_BUCKET}/{key}"
+    # Stable, cacheable, no-expiry proxy URL. Bucket can stay private.
+    if BACKEND_PUBLIC_URL:
+        return f"{BACKEND_PUBLIC_URL}/api/images?key={key}"
+    return f"/api/images?key={key}"
 
-_B2_PREFIX = f"{B2_ENDPOINT_URL}/{B2_BUCKET}/"
+_B2_DIRECT_PREFIX = f"{B2_ENDPOINT_URL}/{B2_BUCKET}/"
 
-def _sign_one(url: str) -> str:
-    if not isinstance(url, str) or not url.startswith(_B2_PREFIX):
-        return url
-    key = url[len(_B2_PREFIX):]
-    try:
-        s3 = get_b2_client()
-        return s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={"Bucket": B2_BUCKET, "Key": key},
-            ExpiresIn=86400,
-        )
-    except Exception as e:
-        logging.getLogger("quicksell").warning(f"sign_one failed for {key}: {e}")
-        return url
+def _proxy_url_for(value: str) -> str:
+    """Convert any legacy direct-B2 URL or a bare key into the stable proxy URL.
+    Idempotent: re-applying it keeps the proxy URL stable.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    # Already a proxy URL
+    if "/api/images?key=" in value:
+        return value
+    # Legacy direct B2 URL (possibly with presigned query string)
+    if value.startswith(_B2_DIRECT_PREFIX):
+        rest = value[len(_B2_DIRECT_PREFIX):]
+        key = rest.split("?", 1)[0]
+        return build_b2_public_url(key)
+    return value
+
+def normalize_image_urls(urls: List[str]) -> List[str]:
+    return [_proxy_url_for(u) for u in urls if u]
 
 def sign_product(p: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(p, dict) and isinstance(p.get("image_urls"), list):
-        p["image_urls"] = [_sign_one(u) for u in p["image_urls"]]
+        p["image_urls"] = [_proxy_url_for(u) for u in p["image_urls"]]
     return p
 
 def sign_order(o: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(o, dict) and isinstance(o.get("items"), list):
         for it in o["items"]:
             if isinstance(it, dict) and it.get("image_url"):
-                it["image_url"] = _sign_one(it["image_url"])
+                it["image_url"] = _proxy_url_for(it["image_url"])
     return o
 
 def sign_shop(shop: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(shop, dict):
         if shop.get("logo_url"):
-            shop["logo_url"] = _sign_one(shop["logo_url"])
+            shop["logo_url"] = _proxy_url_for(shop["logo_url"])
         if shop.get("banner_url"):
-            shop["banner_url"] = _sign_one(shop["banner_url"])
+            shop["banner_url"] = _proxy_url_for(shop["banner_url"])
     return shop
 
 # ---------- Helpers ----------
@@ -356,6 +365,7 @@ async def list_products(user=Depends(current_user), group_id: Optional[str] = No
 @api.post("/products")
 async def create_product(body: ProductIn, user=Depends(current_user)):
     doc = body.dict()
+    doc["image_urls"] = normalize_image_urls(doc.get("image_urls") or [])
     doc.update({
         "id": gen_id(),
         "seller_id": user["id"],
@@ -376,6 +386,7 @@ async def get_product(pid: str, user=Depends(current_user)):
 @api.put("/products/{pid}")
 async def update_product(pid: str, body: ProductIn, user=Depends(current_user)):
     update = body.dict()
+    update["image_urls"] = normalize_image_urls(update.get("image_urls") or [])
     update["updated_at"] = now_iso()
     res = await db.products.update_one({"id": pid, "seller_id": user["id"]}, {"$set": update})
     if res.matched_count == 0:
@@ -417,6 +428,25 @@ async def signed_get(key: str, user=Depends(current_user)):
         return {"url": url}
     except Exception as e:
         raise HTTPException(500, f"Signed get failed: {e}")
+
+# ---- Public image proxy (stable, cacheable) ----
+@api.get("/images")
+async def images_proxy(key: str):
+    if not key or ".." in key:
+        raise HTTPException(400, "Invalid key")
+    try:
+        s3 = get_b2_client()
+        obj = s3.get_object(Bucket=B2_BUCKET, Key=key)
+    except Exception as e:
+        logger.warning(f"image proxy miss for {key}: {e}")
+        raise HTTPException(404, "Image not found")
+    body = obj["Body"]
+    media_type = obj.get("ContentType") or "image/jpeg"
+    headers = {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Length": str(obj.get("ContentLength", "")) if obj.get("ContentLength") else "",
+    }
+    return StreamingResponse(body.iter_chunks(chunk_size=64 * 1024), media_type=media_type, headers={k: v for k, v in headers.items() if v})
 
 # ---------- Orders ----------
 @api.get("/orders")
