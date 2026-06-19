@@ -500,7 +500,18 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
-    await db.users.create_index("handle", unique=True, sparse=True)
+    # Clean up legacy explicit-null handle docs that block the new partial index.
+    await db.users.update_many({"handle": None}, {"$unset": {"handle": ""}})
+    # Drop legacy sparse index if present, then recreate as partial-filter.
+    try:
+        await db.users.drop_index("handle_1")
+    except Exception:
+        pass
+    await db.users.create_index(
+        "handle",
+        unique=True,
+        partialFilterExpression={"handle": {"$type": "string"}},
+    )
     await db.users.create_index("mobile_number", unique=True)
     await db.products.create_index([("seller_id", 1), ("created_at", -1)])
     await db.groups.create_index([("seller_id", 1)])

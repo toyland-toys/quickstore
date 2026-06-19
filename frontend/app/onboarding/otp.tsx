@@ -28,7 +28,10 @@ export default function OtpScreen() {
       else if (!r.user.handle) router.replace('/onboarding/handle');
       else router.replace('/(tabs)');
     } catch (e: any) {
-      setErr(e.message);
+      const msg = (e?.message || '').toLowerCase();
+      if (msg.includes('invalid otp')) setErr('Wrong code. Try 123456 (DEV mode).');
+      else if (msg.includes('internal') || msg.includes('500')) setErr('Server error. Please try again in a moment.');
+      else setErr(e.message || 'Verification failed');
     } finally {
       setLoading(false);
     }
