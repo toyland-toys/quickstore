@@ -1,6 +1,7 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
+from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -38,6 +39,7 @@ db = client[DB_NAME]
 
 app = FastAPI(title="QuickSell Seller API")
 api = APIRouter(prefix="/api")
+templates = Jinja2Templates(directory=str(ROOT_DIR / "templates"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("quicksell")
@@ -468,6 +470,22 @@ async def update_order_status(oid: str, body: OrderStatus, user=Depends(current_
     return {"ok": True}
 
 # ---------- Public storefront (buyer) ----------
+@api.get("/shop/{handle}", response_class=HTMLResponse)
+async def shop_html(handle: str, request: Request):
+    user = await db.users.find_one({"handle": handle.lower()}, {"_id": 0, "pin_hash": 0})
+    if not user:
+        return HTMLResponse(f"<h1>Shop not found</h1><p>No store at /{handle}</p>", status_code=404)
+    groups = await db.groups.find({"seller_id": user["id"]}, {"_id": 0}).to_list(200)
+    products = await db.products.find({"seller_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return templates.TemplateResponse("storefront.html", {
+        "request": request,
+        "seller": {"id": user["id"], "handle": user["handle"], "mobile_number": user["mobile_number"]},
+        "shop": sign_shop(dict(user.get("shop", {}))),
+        "groups": groups,
+        "products": [sign_product(p) for p in products],
+        "canonical_url": str(request.url),
+    })
+
 @api.get("/storefront/{handle}")
 async def storefront(handle: str):
     user = await db.users.find_one({"handle": handle.lower()}, {"_id": 0, "pin_hash": 0})
@@ -585,6 +603,13 @@ async def on_startup():
     await db.products.create_index([("seller_id", 1), ("created_at", -1)])
     await db.groups.create_index([("seller_id", 1)])
     await db.orders.create_index([("seller_id", 1), ("created_at", -1)])
+    # One-time normalization: rewrite any legacy presigned/direct B2 URLs in products
+    # to the stable proxy form so they survive future write-backs.
+    async for p in db.products.find({"image_urls": {"$exists": True, "$ne": []}}, {"id": 1, "image_urls": 1}):
+        urls = p.get("image_urls") or []
+        cleaned = normalize_image_urls(urls)
+        if cleaned != urls:
+            await db.products.update_one({"id": p["id"]}, {"$set": {"image_urls": cleaned}})
     await get_settings()
     logger.info("Startup complete")
 
