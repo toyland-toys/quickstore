@@ -432,6 +432,19 @@ async def signed_get(key: str, user=Depends(current_user)):
         raise HTTPException(500, f"Signed get failed: {e}")
 
 # ---- Public image proxy (stable, cacheable) ----
+import io
+try:
+    from PIL import Image
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    _HEIC_OK = True
+except Exception:
+    _HEIC_OK = False
+
+def _is_heic_key(key: str) -> bool:
+    k = key.lower()
+    return k.endswith(".heic") or k.endswith(".heif")
+
 @api.get("/images")
 async def images_proxy(key: str):
     if not key or ".." in key:
@@ -442,13 +455,41 @@ async def images_proxy(key: str):
     except Exception as e:
         logger.warning(f"image proxy miss for {key}: {e}")
         raise HTTPException(404, "Image not found")
-    body = obj["Body"]
+
     media_type = obj.get("ContentType") or "image/jpeg"
-    headers = {
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Content-Length": str(obj.get("ContentLength", "")) if obj.get("ContentLength") else "",
-    }
-    return StreamingResponse(body.iter_chunks(chunk_size=64 * 1024), media_type=media_type, headers={k: v for k, v in headers.items() if v})
+    raw_body = obj["Body"]
+
+    # Transcode HEIC/HEIF to JPEG so all browsers (Chrome/FF/Edge/Android) can render.
+    needs_transcode = _HEIC_OK and (
+        _is_heic_key(key) or media_type.lower() in ("image/heic", "image/heif")
+    )
+    if needs_transcode:
+        try:
+            data = raw_body.read()
+            img = Image.open(io.BytesIO(data))
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            # Cap dimension for sane payload size on legacy uploads.
+            img.thumbnail((1600, 1600))
+            out = io.BytesIO()
+            img.save(out, format="JPEG", quality=82, optimize=True)
+            jpeg = out.getvalue()
+            return StreamingResponse(
+                iter([jpeg]),
+                media_type="image/jpeg",
+                headers={
+                    "Cache-Control": "public, max-age=31536000, immutable",
+                    "Content-Length": str(len(jpeg)),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"HEIC transcode failed for {key}: {e}; falling back to original")
+
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    cl = obj.get("ContentLength")
+    if cl:
+        headers["Content-Length"] = str(cl)
+    return StreamingResponse(raw_body.iter_chunks(chunk_size=64 * 1024), media_type=media_type, headers=headers)
 
 # ---------- Orders ----------
 @api.get("/orders")
