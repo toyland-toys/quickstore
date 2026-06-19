@@ -5,6 +5,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { theme, STATUS_OPTIONS, STATUS_COLORS } from '@/src/theme';
 import { FormField } from '@/src/components/FormField';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
@@ -46,15 +47,21 @@ export function ProductForm({ mode }: Props) {
     if (images.length >= 5) { Alert.alert('Limit', 'Up to 5 images allowed'); return; }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { Alert.alert('Permission required', 'Allow photo access to add images'); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9 });
     if (res.canceled || !res.assets?.[0]) return;
     const asset = res.assets[0];
     try {
       setUploading(true);
-      const name = asset.fileName || `image-${Date.now()}.jpg`;
-      const ct = asset.mimeType || 'image/jpeg';
+      // Convert any format (HEIC/PNG/WebP) to JPEG for universal display compatibility.
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      const name = `image-${Date.now()}.jpg`;
+      const ct = 'image/jpeg';
       const presign: any = await api('/uploads/presign', { method: 'POST', body: { filename: name, content_type: ct } });
-      await uploadToB2(presign.upload_url, asset.uri, ct);
+      await uploadToB2(presign.upload_url, manipulated.uri, ct);
       setImages(curr => [...curr, presign.public_url]);
     } catch (e: any) {
       Alert.alert('Upload failed', e.message);

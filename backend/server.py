@@ -54,6 +54,43 @@ def get_b2_client():
 def build_b2_public_url(key: str) -> str:
     return f"{B2_ENDPOINT_URL}/{B2_BUCKET}/{key}"
 
+_B2_PREFIX = f"{B2_ENDPOINT_URL}/{B2_BUCKET}/"
+
+def _sign_one(url: str) -> str:
+    if not isinstance(url, str) or not url.startswith(_B2_PREFIX):
+        return url
+    key = url[len(_B2_PREFIX):]
+    try:
+        s3 = get_b2_client()
+        return s3.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": B2_BUCKET, "Key": key},
+            ExpiresIn=86400,
+        )
+    except Exception as e:
+        logging.getLogger("quicksell").warning(f"sign_one failed for {key}: {e}")
+        return url
+
+def sign_product(p: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(p, dict) and isinstance(p.get("image_urls"), list):
+        p["image_urls"] = [_sign_one(u) for u in p["image_urls"]]
+    return p
+
+def sign_order(o: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(o, dict) and isinstance(o.get("items"), list):
+        for it in o["items"]:
+            if isinstance(it, dict) and it.get("image_url"):
+                it["image_url"] = _sign_one(it["image_url"])
+    return o
+
+def sign_shop(shop: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(shop, dict):
+        if shop.get("logo_url"):
+            shop["logo_url"] = _sign_one(shop["logo_url"])
+        if shop.get("banner_url"):
+            shop["banner_url"] = _sign_one(shop["banner_url"])
+    return shop
+
 # ---------- Helpers ----------
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -267,7 +304,7 @@ async def me(user=Depends(current_user)):
         "mobile_number": user["mobile_number"],
         "handle": user.get("handle"),
         "has_pin": bool(user.get("pin_hash")),
-        "shop": user.get("shop", {}),
+        "shop": sign_shop(user.get("shop", {})),
     }
 
 @api.put("/me/shop")
@@ -276,7 +313,7 @@ async def update_shop(body: ShopCustomization, user=Depends(current_user)):
     update = body.dict(exclude_unset=True)
     shop.update(update)
     await db.users.update_one({"id": user["id"]}, {"$set": {"shop": shop}})
-    return {"ok": True, "shop": shop}
+    return {"ok": True, "shop": sign_shop(dict(shop))}
 
 # ---------- Groups ----------
 @api.get("/groups")
@@ -313,7 +350,8 @@ async def list_products(user=Depends(current_user), group_id: Optional[str] = No
     if q:
         query["$or"] = [{"title": {"$regex": q, "$options": "i"}}, {"description": {"$regex": q, "$options": "i"}}]
     cur = db.products.find(query, {"_id": 0}).sort("created_at", -1)
-    return await cur.to_list(1000)
+    items = await cur.to_list(1000)
+    return [sign_product(p) for p in items]
 
 @api.post("/products")
 async def create_product(body: ProductIn, user=Depends(current_user)):
@@ -326,14 +364,14 @@ async def create_product(body: ProductIn, user=Depends(current_user)):
     })
     await db.products.insert_one(doc.copy())
     doc.pop("_id", None)
-    return doc
+    return sign_product(doc)
 
 @api.get("/products/{pid}")
 async def get_product(pid: str, user=Depends(current_user)):
     p = await db.products.find_one({"id": pid, "seller_id": user["id"]}, {"_id": 0})
     if not p:
         raise HTTPException(404, "Not found")
-    return p
+    return sign_product(p)
 
 @api.put("/products/{pid}")
 async def update_product(pid: str, body: ProductIn, user=Depends(current_user)):
@@ -343,7 +381,7 @@ async def update_product(pid: str, body: ProductIn, user=Depends(current_user)):
     if res.matched_count == 0:
         raise HTTPException(404, "Not found")
     p = await db.products.find_one({"id": pid}, {"_id": 0})
-    return p
+    return sign_product(p)
 
 @api.delete("/products/{pid}")
 async def delete_product(pid: str, user=Depends(current_user)):
@@ -387,7 +425,8 @@ async def list_orders(user=Depends(current_user), status: Optional[str] = None):
     if status:
         q["status"] = status
     cur = db.orders.find(q, {"_id": 0}).sort("created_at", -1)
-    return await cur.to_list(500)
+    items = await cur.to_list(500)
+    return [sign_order(o) for o in items]
 
 @api.put("/orders/{oid}/status")
 async def update_order_status(oid: str, body: OrderStatus, user=Depends(current_user)):
@@ -410,11 +449,11 @@ async def storefront(handle: str):
         "seller": {
             "id": user["id"],
             "handle": user["handle"],
-            "shop": user.get("shop", {}),
+            "shop": sign_shop(user.get("shop", {})),
             "mobile_number": user["mobile_number"],
         },
         "groups": groups,
-        "products": products,
+        "products": [sign_product(p) for p in products],
     }
 
 @api.post("/storefront/{handle}/orders")
