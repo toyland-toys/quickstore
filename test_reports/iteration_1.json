@@ -1,0 +1,65 @@
+{
+  "summary": "Backend pytest suite (35 tests) PASSED 100% on a clean unique-mobile path. However, end-to-end frontend onboarding is BLOCKED by a CRITICAL backend bug: POST /api/auth/verify-otp returns 500 (DuplicateKeyError on users.handle unique sparse index) whenever more than one user exists without a claimed handle. UI rendering, DEV-mode 123456 chip, phone screen and OTP screen all look correct.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/verify-otp",
+        "issue": "500 Internal Server Error -- pymongo.errors.DuplicateKeyError: E11000 duplicate key error collection: quicksell_db.users index: handle_1 dup key: { handle: null }. Root cause: server.py line ~199 explicitly inserts {'handle': None} for new users. MongoDB unique sparse indexes only skip documents that LACK the field; documents with explicit null value still collide. So the second user created without a claimed handle always fails. This blocks the entire onboarding flow for any new signup once a single user is sitting in the DB without a handle.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Onboarding -> Verify OTP",
+        "issue": "Frontend correctly POSTs to /api/auth/verify-otp with mobile=+91XXXXXXXXXX and code=123456, but backend returns 500 due to handle_1 unique index collision (see backend critical). UI surfaces a small red 'Internal Server Error' under the OTP input but the user is stuck and cannot proceed to PIN setup / handle reservation / tabs.",
+        "affected_testIDs": ["otp-input", "verify-otp"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "onboarding/otp",
+        "issues": [
+          "DEV chip 'DEV MODE — use code 123456' renders correctly (good).",
+          "Error text 'Internal Server Error' is shown raw from the API exception detail; should be a friendlier user-facing message."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "global",
+        "issue": "Console warnings: 'shadow* style props are deprecated. Use boxShadow.' Non-blocking but should be migrated."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_quicksell_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX (server.py verify_otp, ~line 195-210): do NOT set 'handle': None in the new-user insert. Either omit the 'handle' key entirely so the sparse unique index works, OR drop and recreate the index as a partial index: db.users.create_index('handle', unique=True, partialFilterExpression={'handle': {'$type': 'string'}}). Recommend omitting the key and also cleaning up existing users that have handle=null (e.g., db.users.update_many({'handle': None}, {'$unset': {'handle': ''}})) at startup.",
+    "After fix, re-run /app/backend/tests/test_quicksell_api.py (should still be 35/35) and rerun the frontend onboarding e2e to reach PIN setup, handle reservation, and the 4 bottom tabs (Home/Catalog/Orders/Store).",
+    "Replace raw 'Internal Server Error' surfaced on the OTP screen with a user-friendly message and add a 'Resend OTP' / retry UX."
+  ],
+  "critical_code_review_comments": [
+    "server.py: verify_otp inserts {'handle': None} which conflicts with the sparse unique index on 'handle'. Sparse indexes do not skip explicit null values in MongoDB.",
+    "server.py is 514 lines and approaching the 700-line split threshold; consider splitting into routers (auth.py, products.py, storefront.py, admin.py).",
+    "create_buyer_order silently skips invalid product_ids and still creates the order if at least one item is valid — consider returning a partial-success warning so the buyer/seller is aware.",
+    "Admin endpoints accept the admin PIN via header x-admin-pin in plain text; OK for MVP but should be hashed and ideally rate-limited."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_quicksell_api.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (35/35 pytest on clean path; verify-otp fails in real ongoing DB state with leftover handle=null docs)",
+    "frontend": "~30% (phone screen + OTP screen render & DEV chip OK; onboarding flow blocked at OTP verification by backend 500; PIN/handle/tabs/catalog/store could not be reached)"
+  },
+  "seed_data_creation": "Backend tests created two ephemeral users with mobiles like +9199XXXXXXXX / +9198XXXXXXXX, one handle shop<UNIQUE>a, one group, one product (deleted in cleanup), and one buyer order. Frontend attempts created user docs with handle=null in MongoDB which now block further verify-otp calls until the fix above is applied.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After E1 patches verify_otp + cleans existing handle=null users, re-run pytest backend suite then walk through frontend onboarding on mobile viewport (390x844) by: open /onboarding/phone, type a fresh 10-digit mobile, tap 'Send OTP', type 123456, tap 'Verify & continue', then set PIN 1234 twice, then claim a unique handle, then verify 4 bottom tabs render. Use page.mouse.click(195,194) + page.keyboard.type to fill RN TextInputs (Playwright .fill on RN web inputs is flaky -- they report 'not visible' even when on screen). Backend public URL is in /app/frontend/.env as EXPO_PUBLIC_BACKEND_URL.",
+  "rca_of_issue": "Mongo unique sparse index { handle: 1, sparse: true } skips ONLY documents missing the field; documents with handle=null still participate. server.py:195 explicitly sets 'handle': None on new user insert, so the 2nd new user with handle=null causes DuplicateKeyError -> 500. Reproduction: with any user already in DB that has handle=null, POST /api/auth/verify-otp with a NEW mobile + dev code 123456 -> 500. Mitigation: omit the 'handle' key from the insert dict (or switch to a partial filter index) and clean existing nulls at startup."
+}
