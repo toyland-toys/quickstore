@@ -1,0 +1,191 @@
+{
+  "app_name": "QuickStore Seller (B2B Toy Wholesale)",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A high-efficiency, visually crisp B2B management tool where the product catalog takes center stage and the chrome stays out of the way.",
+  "color": {
+    "surface": "#F9F9F8",
+    "onSurface": "#1A1A1A",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1A1A1A",
+    "surfaceTertiary": "#F2F2F0",
+    "onSurfaceTertiary": "#4A4A4A",
+    "surfaceInverse": "#1A1A1A",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#C25B4E",
+    "brandPrimary": "#C25B4E",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#E8A29A",
+    "onBrandSecondary": "#4A211B",
+    "brandTertiary": "#F7EBEA",
+    "onBrandTertiary": "#C25B4E",
+    "success": "#317159",
+    "onSuccess": "#FFFFFF",
+    "warning": "#B27C12",
+    "onWarning": "#FFFFFF",
+    "error": "#B94A4A",
+    "onError": "#FFFFFF",
+    "info": "#4A4A4A",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E5E3",
+    "borderStrong": "#D1D1CE",
+    "divider": "#E5E5E3"
+  },
+  "typography": {
+    "displayFontFamily": "Geist",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room. Form labels above inputs. Lists and cards padded comfortably. Always sticky primary CTA at bottom with safe-area clearance.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Bottom tab bar background",
+      "Floating action buttons (FAB) over brandTertiary tint",
+      "Sticky headers when scrolling long product catalogs",
+      "Bottom-sheet headers (e.g. filter/sort modals)"
+    ],
+    "dont's": [
+      "Form inputs",
+      "Individual product cards",
+      "Body text regions"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth Flow (Signup/Login/PIN/Handle)",
+      "purpose": "Securely onboard the wholesale seller, capture their unique shop handle, and set up a PIN for daily rapid entry.",
+      "states": {
+        "loading": "Centered spinner on surface.",
+        "empty": "N/A",
+        "error": "Readable inline error message below the specific input field in onError color, plus a Toast."
+      },
+      "layout": "Clean, single-column forms. Large typography for step titles. Inputs have labels above them. The primary 'Next' or 'Submit' CTA is sticky at the bottom of the screen (KeyboardAvoidingView) with safe-area padding. PIN setup uses an iOS-style borderless number pad centered on screen."
+    },
+    {
+      "name": "Dashboard (Home)",
+      "purpose": "Provide a high-level overview of wholesale operations and quick actions for store management.",
+      "states": {
+        "loading": "Skeleton loaders for stat cards.",
+        "empty": "Illustration of a shop with 'Welcome to your wholesale store' and a primary CTA to 'Add your first product'.",
+        "error": "Error message with 'Retry connection' button."
+      },
+      "layout": "Vertical scroll. Top section: Quick stat cards (Pending Orders, Low Stock) using a 2-column flex-wrap grid with space-between. Middle section: Horizontal scrolling row of Action Shortcuts (Customize Store, Manage Groups, Add Product). Bottom section: Recent Alerts or 3 most recent orders."
+    },
+    {
+      "name": "Product Catalog & Groups",
+      "purpose": "Manage the B2B inventory, update MOQs, and organize products into catalogs.",
+      "states": {
+        "loading": "Skeleton list items.",
+        "empty": "Empty state illustration of a box with 'Your catalog is empty'. Primary CTA to 'Add Product'.",
+        "error": "Toast message indicating sync failure, retry button."
+      },
+      "layout": "Header contains a Search bar and segmented control (All Products / By Group). List view: Rows with square image (left), Title/Price/MOQ (center), and Status Badge (right). A prominent floating action button (FAB) in the bottom right for 'Add Product' with glass effect."
+    },
+    {
+      "name": "Product Form (Create/Edit)",
+      "purpose": "Capture comprehensive wholesale product details including multiple images, descriptions, pricing, and MOQ.",
+      "states": {
+        "loading": "Spinner during image upload or saving.",
+        "empty": "N/A",
+        "error": "Red text below invalid fields (e.g., missing price) and sticky error banner if upload fails."
+      },
+      "layout": "Scrollable form. Top: Horizontal scroll view for multi-image upload with a prominent 'Add Image' tile. Below: Single column inputs (Title, Price, MOQ, Stock Status toggle, Group selector). A sticky 'Save Product' CTA anchored at the bottom over a glassmorphic background."
+    },
+    {
+      "name": "Orders Inbox",
+      "purpose": "Process incoming B2B orders efficiently across different fulfillment stages.",
+      "states": {
+        "loading": "Skeleton order cards.",
+        "empty": "Empty state illustration of a clipboard: 'No orders here yet'.",
+        "error": "Error text with a retry button centered."
+      },
+      "layout": "Sticky top tab bar (Pending | Accepted | Shipped). Vertical list of order cards. Cards display Buyer Name (bold), Order ID, total amount, item count, and a right-aligned CTA (e.g., 'Accept Order' or 'Mark Shipped'). Cards fill 100% width minus screen padding (lg)."
+    },
+    {
+      "name": "Storefront Customization & Preview",
+      "purpose": "Allow the seller to brand their buyer-facing B2B storefront and preview the public web layout.",
+      "states": {
+        "loading": "Spinner while generating preview.",
+        "empty": "N/A",
+        "error": "Toast on failed save."
+      },
+      "layout": "Top half: Inputs for Store Title, Banner Image upload, and Brand Color picker (grid of predefined hex circles or input). Bottom half (or a full-screen Modal): A 'Live Preview' area wrapped in a mock mobile browser frame showing exactly how the buyer sees the catalog."
+    }
+  ],
+  "images": {
+    "action_figures_toy_1": {
+      "url": "https://images.unsplash.com/photo-1608278047522-58806a6ac85b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxhY3Rpb24lMjBmaWd1cmVzJTIwdG95cyUyMGNvbGxlY3Rpb258ZW58MHx8fHwxNzgxODg2MDMxfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "red and white robot toy action figure"
+    },
+    "action_figures_toy_2": {
+      "url": "https://images.pexels.com/photos/16075337/pexels-photo-16075337.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Collection of anime and cartoon figurines on a wooden surface"
+    },
+    "wooden_toy_1": {
+      "url": "https://images.unsplash.com/photo-1618842676088-c4d48a6a7c9d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwxfHx3b29kZW4lMjB0b3lzJTIwa2lkcyUyMHBsYXl8ZW58MHx8fHwxNzgxODg2MDMxfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "blue green yellow and red plastic and wooden toys"
+    },
+    "store_banner_preview": {
+      "url": "https://images.pexels.com/photos/6214155/pexels-photo-6214155.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Laptop displaying shop now with vibrant shopping bags on glass table outdoors"
+    },
+    "empty_state_illustration": {
+      "url": "https://images.unsplash.com/photo-1674027392887-751d6396b710?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAxODF8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBlY29tbWVyY2UlMjBzdG9yZSUyMGJhbm5lcnxlbnwwfHx8fDE3ODE4ODYwMzF8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract purple background with basket representing empty e-commerce state"
+    }
+  },
+  "haptics": {
+    "button_press": "selection",
+    "success_action": "notificationSuccess",
+    "error_action": "notificationError",
+    "tab_switch": "selection",
+    "drag_reorder": "impactLight",
+    "pull_to_refresh": "impactMedium"
+  },
+  "instructions_to_main_agent": [
+    "Design specifically for iOS-Native Clean (Personality 1). Maintain generous padding, avoid clutter, and use a crisp light-theme palette featuring the terracotta accent.",
+    "Ensure all primary call-to-actions (e.g., 'Save Product', 'Next', 'Add to Cart') are sticky at the bottom of scrolling views with correct safe-area clearances to avoid the home indicator.",
+    "Images overlaid with text (e.g. the Buyer Preview Store Banner) MUST include a vertical top-to-bottom linear gradient scrim (0% transparent to 70%+ surfaceInverse) to guarantee WCAG AA contrast.",
+    "For the multi-image upload component, use a horizontally scrolling list of square thumbnails. The first tile should be a 'brandTertiary' tinted button to add a new image.",
+    "Order Management and Product Catalog rows must have a minimum 56pt touch target height.",
+    "Never use indigo, blue, purple, or generic emoji. Rely on Ionicons (outline or filled consistently per screen).",
+    "When displaying the Buyer-side preview, visually wrap the preview in a lightweight 'device frame' or modal sheet to distinguish it from the seller's operational UI.",
+    "Haptics must be wired into all primary interactions: product saves, tab switches, and order status updates."
+  ]
+}
