@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>{{ shop.title or seller.handle }}</title>
 <meta name="description" content="{{ shop.tagline or 'Wholesale catalog from ' + seller.handle }}" />
-<!-- Open Graph -->
 <meta property="og:title" content="{{ shop.title or seller.handle }}" />
 <meta property="og:description" content="{{ shop.tagline or 'Wholesale catalog' }}" />
 <meta property="og:type" content="website" />
@@ -23,6 +22,7 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+body.gate-locked{overflow:hidden}
 a{color:inherit;text-decoration:none}
 img{display:block;max-width:100%}
 .container{max-width:1200px;margin:0 auto;padding:0 16px}
@@ -50,12 +50,13 @@ header.banner .inner{position:relative;z-index:1}
   font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
 .chip.active{background:var(--brand);color:#fff;border-color:var(--brand)}
 
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;padding:20px 0 80px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;padding:20px 0 24px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;overflow:hidden;
-  display:flex;flex-direction:column;box-shadow:var(--shadow);transition:transform .15s ease}
+  display:flex;flex-direction:column;box-shadow:var(--shadow);transition:transform .15s ease;cursor:pointer}
 .card:hover{transform:translateY(-2px)}
-.card .ph{aspect-ratio:1/1;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px}
+.card .ph{aspect-ratio:1/1;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px;position:relative}
 .card .ph img{width:100%;height:100%;object-fit:cover}
+.card .ph .count{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:2px 7px;border-radius:999px;font-weight:600}
 .card .body{padding:12px 14px 14px;flex:1;display:flex;flex-direction:column}
 .card h3{font-size:14px;margin:0 0 4px;font-weight:700;line-height:1.3;max-height:2.6em;overflow:hidden}
 .price{color:var(--brand);font-weight:800;font-size:16px}
@@ -71,12 +72,12 @@ header.banner .inner{position:relative;z-index:1}
 .qty button{background:var(--brand);color:#fff;border:0;width:28px;height:28px;border-radius:8px;font-size:18px;font-weight:700;cursor:pointer}
 .qty .n{font-weight:700;font-variant-numeric:tabular-nums}
 
-/* Cart drawer */
-.drawer-bg{position:fixed;inset:0;background:rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+/* Cart drawer / Modal shared */
+.drawer-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
 .drawer{position:fixed;right:0;top:0;bottom:0;width:min(440px,100%);background:var(--surface);box-shadow:-12px 0 32px -8px rgba(0,0,0,.18);
   transform:translateX(100%);transition:transform .25s ease;z-index:60;display:flex;flex-direction:column}
 body.open .drawer{transform:translateX(0)}
-body.open .drawer-bg{opacity:1;pointer-events:auto}
+body.open .drawer-bg,body.pdp .drawer-bg,body.gate-locked .drawer-bg{opacity:1;pointer-events:auto}
 .drawer h2{margin:0;font-size:18px}
 .dh{display:flex;align-items:center;justify-content:space-between;padding:18px;border-bottom:1px solid var(--border)}
 .dh button{background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--mute)}
@@ -105,14 +106,62 @@ body.checkout .actions{display:none}
 .form-wrap input,.form-wrap textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font:inherit;background:var(--surface)}
 .form-wrap textarea{min-height:80px;resize:vertical}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;
-  padding:12px 18px;border-radius:999px;opacity:0;transition:all .25s;z-index:80;font-size:14px;font-weight:600;box-shadow:0 12px 24px -10px rgba(0,0,0,.4)}
+  padding:12px 18px;border-radius:999px;opacity:0;transition:all .25s;z-index:90;font-size:14px;font-weight:600;box-shadow:0 12px 24px -10px rgba(0,0,0,.4)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Product Detail Modal (Feature 1) */
+.pdp{position:fixed;left:0;right:0;bottom:0;top:0;background:var(--surface);z-index:62;transform:translateY(100%);transition:transform .28s ease;display:flex;flex-direction:column}
+body.pdp .pdp{transform:translateY(0)}
+.pdp-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2}
+.pdp-head button{background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--mute)}
+.pdp-body{flex:1;overflow-y:auto}
+.carousel{position:relative;width:100%;background:var(--soft);aspect-ratio:1/1;max-height:60vh}
+.carousel-track{display:flex;width:100%;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.carousel-track::-webkit-scrollbar{display:none}
+.carousel-slide{flex:0 0 100%;width:100%;height:100%;scroll-snap-align:start}
+.carousel-slide img{width:100%;height:100%;object-fit:contain;background:#000}
+.dots{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;gap:6px;z-index:2}
+.dots span{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.55);transition:all .2s}
+.dots span.on{background:#fff;width:18px;border-radius:4px}
+.pdp-info{padding:18px;max-width:680px;margin:0 auto}
+.pdp-info h2{margin:0 0 6px;font-size:22px;font-weight:800}
+.pdp-info .price{font-size:24px}
+.pdp-info .desc{color:var(--ink);white-space:pre-wrap;margin-top:14px;line-height:1.55;font-size:14.5px}
+.pdp-cta{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:14px 18px calc(14px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center}
+.pdp-cta .qty{margin:0;flex:1;justify-content:space-between}
+.pdp-cta .add{flex:1;margin:0;padding:13px}
+
+/* Footer (Feature 3) */
+.site-foot{background:var(--ink);color:#E5E5E3;margin-top:32px;padding:36px 0 28px}
+.site-foot .grid-foot{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px}
+.site-foot h4{margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff;opacity:.85}
+.site-foot p,.site-foot a{font-size:14px;line-height:1.55;color:#CFCFCC;margin:0 0 6px}
+.site-foot a:hover{color:#fff}
+.foot-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.foot-row .ic{flex-shrink:0;opacity:.7}
+.foot-bottom{text-align:center;margin-top:28px;padding-top:18px;border-top:1px solid #2A2A2A;color:#8B8B89;font-size:12px}
+
+/* Buyer Gate (Feature 4) */
+.gate-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;pointer-events:none;transition:opacity .2s;z-index:70}
+.gate{position:fixed;left:50%;top:50%;transform:translate(-50%,calc(-50% + 30px));opacity:0;pointer-events:none;
+  background:var(--surface);border-radius:20px;padding:28px;max-width:380px;width:calc(100% - 32px);z-index:75;
+  box-shadow:0 24px 48px -12px rgba(0,0,0,.32);transition:all .22s ease}
+body.gate-locked .gate-bg{opacity:1;pointer-events:auto}
+body.gate-locked .gate{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+.gate h2{margin:0 0 6px;font-size:20px;font-weight:800}
+.gate p{margin:0 0 18px;color:var(--mute);font-size:14px;line-height:1.5}
+.gate label{display:block;font-size:12px;color:var(--mute);font-weight:600;margin:14px 0 6px}
+.gate input{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font:inherit;background:var(--surface)}
+.gate .actions{display:flex;gap:10px;margin-top:22px}
+.gate .actions button{flex:1}
+.gate-close{position:absolute;top:12px;right:12px;background:transparent;border:0;font-size:22px;cursor:pointer;color:var(--mute)}
 
 @media(max-width:520px){
   .grid{grid-template-columns:repeat(2,1fr);gap:10px}
   .card h3{font-size:13px}
   .price{font-size:15px}
   .shop-title{font-size:24px}
+  .pdp-info h2{font-size:20px}
 }
 </style>
 </head>
@@ -124,7 +173,8 @@ body.checkout .actions{display:none}
     {% if shop.tagline %}<p class="shop-tag">{{ shop.tagline }}</p>{% endif %}
     <div class="shop-meta">
       <span class="chip-stat">📦 {{ products|length }} products</span>
-      {% if shop.whatsapp_number %}<a class="chip-stat" href="https://wa.me/{{ shop.whatsapp_number|replace('+','')|replace(' ','') }}" target="_blank" rel="noopener">💬 WhatsApp seller</a>{% endif %}
+      {% if shop.whatsapp_number %}<a class="chip-stat" href="https://wa.me/{{ shop.whatsapp_number|replace('+','')|replace(' ','') }}" target="_blank" rel="noopener">💬 WhatsApp</a>{% endif %}
+      {% if shop.maps_url %}<a class="chip-stat" href="{{ shop.maps_url }}" target="_blank" rel="noopener">📍 Directions</a>{% endif %}
     </div>
   </div>
 </header>
@@ -152,11 +202,10 @@ body.checkout .actions{display:none}
 <main class="container">
   <div class="grid" id="grid">
     {% for p in products %}
-    <article class="card" data-id="{{ p.id }}" data-title="{{ p.title|e }}" data-desc="{{ (p.description or '')|e }}"
-             data-price="{{ p.price }}" data-moq="{{ p.min_quantity }}" data-status="{{ p.status }}"
-             data-group="{{ p.group_id or '' }}" data-img="{{ (p.image_urls or [''])[0] }}">
+    <article class="card" data-id="{{ p.id }}" data-group="{{ p.group_id or '' }}" data-title-lc="{{ (p.title or '')|lower }}" data-desc-lc="{{ (p.description or '')|lower }}">
       <div class="ph">
         {% if p.image_urls and p.image_urls[0] %}<img loading="lazy" src="{{ p.image_urls[0] }}" alt="{{ p.title|e }}" />{% else %}<span>No image</span>{% endif %}
+        {% if p.image_urls and p.image_urls|length > 1 %}<span class="count">+{{ p.image_urls|length - 1 }}</span>{% endif %}
       </div>
       <div class="body">
         <span class="status s-{{ p.status.split(' ')[0] }}">{{ p.status }}</span>
@@ -171,7 +220,35 @@ body.checkout .actions{display:none}
   {% if not products %}<p style="text-align:center;color:var(--mute);padding:48px">This shop hasn't listed any products yet.</p>{% endif %}
 </main>
 
+<footer class="site-foot">
+  <div class="container">
+    <div class="grid-foot">
+      <div>
+        <h4>{{ shop.title or seller.handle }}</h4>
+        {% if shop.tagline %}<p>{{ shop.tagline }}</p>{% endif %}
+        {% if shop.address %}<div class="foot-row"><span class="ic">📍</span><p>{{ shop.address }}</p></div>{% endif %}
+      </div>
+      <div>
+        <h4>Contact</h4>
+        {% if shop.mobile_primary or shop.whatsapp_number %}<div class="foot-row"><span class="ic">📱</span><a href="tel:{{ (shop.mobile_primary or shop.whatsapp_number)|replace(' ','') }}">{{ shop.mobile_primary or shop.whatsapp_number }}</a></div>{% endif %}
+        {% if shop.mobile_secondary %}<div class="foot-row"><span class="ic">📱</span><a href="tel:{{ shop.mobile_secondary|replace(' ','') }}">{{ shop.mobile_secondary }}</a></div>{% endif %}
+        {% if shop.landline %}<div class="foot-row"><span class="ic">☎</span><a href="tel:{{ shop.landline|replace(' ','') }}">{{ shop.landline }}</a></div>{% endif %}
+        {% if shop.whatsapp_number %}<div class="foot-row"><span class="ic">💬</span><a href="https://wa.me/{{ shop.whatsapp_number|replace('+','')|replace(' ','') }}" target="_blank" rel="noopener">WhatsApp</a></div>{% endif %}
+      </div>
+      {% if shop.maps_url %}
+      <div>
+        <h4>Find us</h4>
+        <div class="foot-row"><span class="ic">🗺</span><a href="{{ shop.maps_url }}" target="_blank" rel="noopener">Open in Google Maps</a></div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="foot-bottom">© {{ seller.handle }} · Powered by QuickStore</div>
+  </div>
+</footer>
+
 <div class="drawer-bg" id="drawer-bg"></div>
+
+<!-- Cart Drawer -->
 <aside class="drawer" id="drawer" aria-hidden="true">
   <div class="dh">
     <h2 id="d-title">Your cart</h2>
@@ -181,12 +258,9 @@ body.checkout .actions{display:none}
   <div class="form-wrap">
     <h3 style="margin:0 0 4px">Delivery details</h3>
     <p style="margin:0;color:var(--mute);font-size:13px">The seller will contact you to confirm payment.</p>
-    <label for="b-name">Full name</label>
-    <input id="b-name" required autocomplete="name" />
-    <label for="b-mobile">Mobile number</label>
-    <input id="b-mobile" required type="tel" autocomplete="tel" placeholder="+91…" />
-    <label for="b-addr">Delivery address</label>
-    <textarea id="b-addr" required autocomplete="street-address" placeholder="Full address with pincode"></textarea>
+    <label for="b-name">Full name</label><input id="b-name" required autocomplete="name" />
+    <label for="b-mobile">Mobile number</label><input id="b-mobile" required type="tel" autocomplete="tel" placeholder="+91…" />
+    <label for="b-addr">Delivery address</label><textarea id="b-addr" required autocomplete="street-address" placeholder="Full address with pincode"></textarea>
     <button class="btn btn-prim" id="submit-order" style="margin-top:20px" type="button">Submit order</button>
     <button class="btn btn-sec" id="back-cart" style="margin-top:8px;width:100%" type="button">Back to cart</button>
   </div>
@@ -200,6 +274,44 @@ body.checkout .actions{display:none}
   </div>
 </aside>
 
+<!-- Product Detail Modal -->
+<section class="pdp" id="pdp" aria-hidden="true">
+  <div class="pdp-head">
+    <button id="pdp-close" aria-label="Back" type="button">←</button>
+    <strong id="pdp-headtitle"></strong>
+    <span style="width:24px"></span>
+  </div>
+  <div class="pdp-body">
+    <div class="carousel"><div class="carousel-track" id="carousel-track"></div><div class="dots" id="carousel-dots"></div></div>
+    <div class="pdp-info">
+      <span id="pdp-status" class="status" style="display:inline-block"></span>
+      <h2 id="pdp-title"></h2>
+      <div class="price" id="pdp-price"></div>
+      <div class="moq" id="pdp-moq" style="margin-top:4px"></div>
+      <div class="desc" id="pdp-desc"></div>
+    </div>
+  </div>
+  <div class="pdp-cta" id="pdp-cta"></div>
+</section>
+
+<!-- Buyer Gate -->
+{% if shop.gate_enabled %}
+<div class="gate-bg"></div>
+<div class="gate" role="dialog" aria-labelledby="gate-title">
+  {% if not shop.gate_required %}<button class="gate-close" id="gate-close-btn" aria-label="Close" type="button">×</button>{% endif %}
+  <h2 id="gate-title">{{ shop.gate_title or 'Welcome!' }}</h2>
+  <p>{{ shop.gate_subtitle or ("Please share your name and mobile number to view this catalog." if shop.gate_required else "Share your details so we can keep you updated on new arrivals.") }}</p>
+  <label for="g-name">Your name{% if shop.gate_required %} <span style="color:var(--err)">*</span>{% endif %}</label>
+  <input id="g-name" autocomplete="name" />
+  <label for="g-mobile">Mobile number{% if shop.gate_required %} <span style="color:var(--err)">*</span>{% endif %}</label>
+  <input id="g-mobile" type="tel" autocomplete="tel" placeholder="+91…" />
+  <div class="actions">
+    {% if not shop.gate_required %}<button class="btn btn-sec" id="gate-skip" type="button">Skip</button>{% endif %}
+    <button class="btn btn-prim" id="gate-submit" type="button" style="grid-column:auto">Continue</button>
+  </div>
+</div>
+{% endif %}
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
@@ -207,54 +319,47 @@ body.checkout .actions{display:none}
 const HANDLE = document.body.dataset.handle;
 const SHOP_TITLE = {{ (shop.title or seller.handle)|tojson }};
 const WHATSAPP = {{ (shop.whatsapp_number or '')|tojson }};
+const GATE = {"enabled": {{ 'true' if shop.gate_enabled else 'false' }}, "required": {{ 'true' if shop.gate_required else 'false' }}};
+const PRODUCTS = {{ products|tojson }};
 const CART_KEY = "qs_cart_" + HANDLE;
+const BUYER_KEY = "qs_buyer_" + HANDLE;
+
+const PRODS_BY_ID = {};
+PRODUCTS.forEach(p => { PRODS_BY_ID[p.id] = p; });
 
 function loadCart(){ try{return JSON.parse(localStorage.getItem(CART_KEY))||{}}catch(e){return {}} }
 function saveCart(c){ localStorage.setItem(CART_KEY, JSON.stringify(c)); }
-function cardOf(id){ return document.querySelector('.card[data-id="'+id+'"]'); }
-function readP(id){
-  const c = cardOf(id); if(!c) return null;
-  return {
-    id, title: c.dataset.title, desc: c.dataset.desc,
-    price: parseFloat(c.dataset.price), moq: parseInt(c.dataset.moq,10),
-    status: c.dataset.status, img: c.dataset.img,
-  };
-}
+function loadBuyer(){ try{return JSON.parse(localStorage.getItem(BUYER_KEY))||null}catch(e){return null} }
+function saveBuyer(b){ localStorage.setItem(BUYER_KEY, JSON.stringify(b)); }
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),1800); }
 
 function renderAddSlots(){
   const cart = loadCart();
   document.querySelectorAll('.add-slot').forEach(slot=>{
-    const id = slot.dataset.id;
-    const p = readP(id);
+    const id = slot.dataset.id; const p = PRODS_BY_ID[id]; if(!p) return;
     const inCart = cart[id];
     const outOfStock = p.status === 'Out of stock';
     if(inCart){
-      slot.innerHTML =
-        '<div class="qty">'
+      slot.innerHTML = '<div class="qty">'
         +'<button data-act="dec" data-id="'+id+'" type="button">−</button>'
         +'<span class="n">'+inCart.qty+' in cart</span>'
-        +'<button data-act="inc" data-id="'+id+'" type="button">+</button>'
-        +'</div>';
+        +'<button data-act="inc" data-id="'+id+'" type="button">+</button></div>';
     } else {
       slot.innerHTML = '<button class="add" data-act="add" data-id="'+id+'" '+(outOfStock?'disabled':'')+' type="button" data-testid="add-'+id+'">'
-        + (outOfStock ? 'Out of stock' : 'Add (min '+p.moq+')')
-        + '</button>';
+        + (outOfStock ? 'Out of stock' : 'Add (min '+p.min_quantity+')') + '</button>';
     }
   });
 }
 
 function updateBadge(){
-  const cart = loadCart();
-  const n = Object.values(cart).reduce((s,i)=>s+i.qty,0);
+  const n = Object.values(loadCart()).reduce((s,i)=>s+i.qty,0);
   document.getElementById('cart-badge').textContent = n;
 }
-
 function cartItems(){
   const cart = loadCart();
   return Object.keys(cart).map(id=>{
-    const p = readP(id); if(!p) return null;
-    return Object.assign({}, p, { qty: cart[id].qty });
+    const p = PRODS_BY_ID[id]; if(!p) return null;
+    return { id, title:p.title, price:p.price, moq:p.min_quantity, img:(p.image_urls||[''])[0], qty:cart[id].qty };
   }).filter(Boolean);
 }
 function cartTotal(){ return cartItems().reduce((s,i)=>s + i.price*i.qty, 0); }
@@ -272,11 +377,7 @@ function renderCart(){
       '<div class="row">'
       + (it.img ? '<img src="'+it.img+'" alt="">' : '<div class="ph2"></div>')
       + '<div class="info"><b>'+it.title+'</b><span>₹'+it.price.toLocaleString()+' × '+it.qty+'</span></div>'
-      + '<div class="qty">'
-      +   '<button data-act="dec" data-id="'+it.id+'" type="button">−</button>'
-      +   '<span class="n">'+it.qty+'</span>'
-      +   '<button data-act="inc" data-id="'+it.id+'" type="button">+</button>'
-      + '</div>'
+      + '<div class="qty"><button data-act="dec" data-id="'+it.id+'" type="button">−</button><span class="n">'+it.qty+'</span><button data-act="inc" data-id="'+it.id+'" type="button">+</button></div>'
       + '</div>'
     ).join('');
     document.getElementById('total').textContent = '₹' + cartTotal().toLocaleString();
@@ -284,58 +385,109 @@ function renderCart(){
   updateBadge();
 }
 
-// --- Cart actions (event delegation) ---
-document.addEventListener('click', (e)=>{
-  const t = e.target.closest('button[data-act]'); if(!t) return;
-  const id = t.dataset.id; const p = readP(id); if(!p) return;
+// Cart actions
+function applyAct(act, id){
+  const p = PRODS_BY_ID[id]; if(!p) return;
   const cart = loadCart();
-  if(t.dataset.act==='add'){ cart[id] = {qty: p.moq}; toast('Added to cart'); }
-  else if(t.dataset.act==='inc'){ if(!cart[id]) cart[id]={qty:p.moq}; else cart[id].qty += 1; }
-  else if(t.dataset.act==='dec'){
+  if(act==='add'){ cart[id] = {qty: p.min_quantity}; toast('Added to cart'); }
+  else if(act==='inc'){ if(!cart[id]) cart[id]={qty:p.min_quantity}; else cart[id].qty += 1; }
+  else if(act==='dec'){
     if(!cart[id]) return;
-    if(cart[id].qty <= p.moq){ delete cart[id]; toast('Removed'); }
+    if(cart[id].qty <= p.min_quantity){ delete cart[id]; toast('Removed'); }
     else cart[id].qty -= 1;
   }
-  saveCart(cart); renderAddSlots(); renderCart();
+  saveCart(cart); renderAddSlots(); renderCart(); if(document.body.classList.contains('pdp')) renderPdpCta(id);
+}
+document.addEventListener('click', (e)=>{
+  const t = e.target.closest('button[data-act]'); if(!t) return;
+  e.stopPropagation(); applyAct(t.dataset.act, t.dataset.id);
 });
 
-// --- Search ---
-document.getElementById('q').addEventListener('input', (e)=>{
-  const q = e.target.value.trim().toLowerCase();
+// Card click → open PDP
+document.getElementById('grid').addEventListener('click', (e)=>{
+  if(e.target.closest('button[data-act]')) return;
+  const card = e.target.closest('.card'); if(!card) return;
+  openPdp(card.dataset.id);
+});
+
+// Search + group
+const filter = ()=>{
+  const q = (document.getElementById('q').value||'').trim().toLowerCase();
   const activeGroup = document.querySelector('.chip.active')?.dataset.group || '';
   document.querySelectorAll('.card').forEach(c=>{
-    const matchQ = !q || (c.dataset.title.toLowerCase().includes(q) || (c.dataset.desc||'').toLowerCase().includes(q));
+    const matchQ = !q || c.dataset.titleLc.includes(q) || c.dataset.descLc.includes(q);
     const matchG = !activeGroup || c.dataset.group === activeGroup;
     c.style.display = (matchQ && matchG) ? '' : 'none';
   });
-});
-
-// --- Group chips ---
+};
+document.getElementById('q').addEventListener('input', filter);
 document.getElementById('chips')?.addEventListener('click', (e)=>{
   const c = e.target.closest('.chip'); if(!c) return;
   document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
-  c.classList.add('active');
-  document.getElementById('q').dispatchEvent(new Event('input'));
+  c.classList.add('active'); filter();
 });
 
-// --- Drawer ---
-const open = ()=>{ renderCart(); document.body.classList.add('open'); };
-const close = ()=>{ document.body.classList.remove('open'); document.body.classList.remove('checkout'); document.getElementById('d-title').textContent='Your cart'; };
-document.getElementById('cart-open').addEventListener('click', open);
-document.getElementById('cart-close').addEventListener('click', close);
-document.getElementById('drawer-bg').addEventListener('click', close);
+// Drawer
+const openCart = ()=>{ renderCart(); document.body.classList.add('open'); };
+const closeAll = ()=>{ document.body.classList.remove('open'); document.body.classList.remove('checkout'); document.body.classList.remove('pdp'); document.getElementById('d-title').textContent='Your cart'; };
+document.getElementById('cart-open').addEventListener('click', openCart);
+document.getElementById('cart-close').addEventListener('click', closeAll);
+document.getElementById('drawer-bg').addEventListener('click', ()=>{ if(!document.body.classList.contains('gate-locked')) closeAll(); });
 
-// --- Checkout flow ---
+// ----- Product Detail Modal -----
+function renderPdpCta(id){
+  const p = PRODS_BY_ID[id]; if(!p) return;
+  const cart = loadCart();
+  const cta = document.getElementById('pdp-cta');
+  const out = p.status === 'Out of stock';
+  if(cart[id]){
+    cta.innerHTML = '<div class="qty">'
+      +'<button data-act="dec" data-id="'+id+'" type="button">−</button>'
+      +'<span class="n">'+cart[id].qty+' in cart</span>'
+      +'<button data-act="inc" data-id="'+id+'" type="button">+</button></div>'
+      +'<button class="add" id="pdp-view-cart" type="button">View cart</button>';
+    document.getElementById('pdp-view-cart').onclick = ()=>{ closeAll(); openCart(); };
+  } else {
+    cta.innerHTML = '<button class="add" data-act="add" data-id="'+id+'" '+(out?'disabled':'')+' type="button" style="width:100%">'+(out?'Out of stock':'Add to cart (min '+p.min_quantity+')')+'</button>';
+  }
+}
+function openPdp(id){
+  const p = PRODS_BY_ID[id]; if(!p) return;
+  document.getElementById('pdp-headtitle').textContent = p.title;
+  document.getElementById('pdp-title').textContent = p.title;
+  document.getElementById('pdp-price').textContent = '₹' + p.price.toLocaleString();
+  document.getElementById('pdp-moq').textContent = 'Minimum order quantity: ' + p.min_quantity;
+  document.getElementById('pdp-desc').textContent = p.description || '';
+  const st = document.getElementById('pdp-status');
+  const k = p.status.split(' ')[0];
+  st.className = 'status s-' + k; st.textContent = p.status;
+  const track = document.getElementById('carousel-track');
+  const dots = document.getElementById('carousel-dots');
+  const imgs = p.image_urls && p.image_urls.length ? p.image_urls : [''];
+  track.innerHTML = imgs.map(u => '<div class="carousel-slide">'+(u?'<img src="'+u+'" alt="">':'<div style="background:var(--soft);width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--mute)">No image</div>')+'</div>').join('');
+  dots.innerHTML = imgs.map((_,i)=>'<span class="'+(i===0?'on':'')+'"></span>').join('');
+  track.scrollLeft = 0;
+  track.onscroll = ()=>{
+    const w = track.clientWidth; if(w<=0) return;
+    const i = Math.round(track.scrollLeft / w);
+    [...dots.children].forEach((d,j)=>d.classList.toggle('on', j===i));
+  };
+  renderPdpCta(id);
+  document.body.classList.add('pdp');
+}
+document.getElementById('pdp-close').addEventListener('click', closeAll);
+
+// ----- Checkout -----
 document.getElementById('checkout-btn').addEventListener('click', ()=>{
   if(cartItems().length===0){ toast('Cart is empty'); return; }
+  const buyer = loadBuyer();
+  if(buyer){ document.getElementById('b-name').value = buyer.name || ''; document.getElementById('b-mobile').value = buyer.mobile || ''; }
   document.body.classList.add('checkout');
   document.getElementById('d-title').textContent = 'Checkout';
 });
 document.getElementById('back-cart').addEventListener('click', ()=>{
-  document.body.classList.remove('checkout');
-  document.getElementById('d-title').textContent = 'Your cart';
+  document.body.classList.remove('checkout'); document.getElementById('d-title').textContent='Your cart';
 });
-
 document.getElementById('submit-order').addEventListener('click', async ()=>{
   const name = document.getElementById('b-name').value.trim();
   const mobile = document.getElementById('b-mobile').value.trim();
@@ -349,16 +501,17 @@ document.getElementById('submit-order').addEventListener('click', async ()=>{
       body: JSON.stringify({buyer_name:name, buyer_mobile:mobile, buyer_address:addr, items})
     });
     if(!r.ok){ const e = await r.json().catch(()=>({detail:'Failed'})); throw new Error(e.detail||'Order failed'); }
+    saveBuyer({name, mobile});
     saveCart({}); renderAddSlots(); renderCart();
-    document.getElementById('dbody').innerHTML = '<div class="empty"><div style="font-size:48px">✅</div><b style="color:var(--ink)">Order placed!</b><br>The seller will contact you on '+mobile+' to confirm payment & delivery.</div>';
+    document.getElementById('dbody').innerHTML = '<div class="empty"><div style="font-size:48px">✅</div><b style="color:var(--ink)">Order placed!</b><br>The seller will contact you on '+mobile+' to confirm.</div>';
     document.body.classList.remove('checkout');
-    document.getElementById('d-title').textContent = 'Thank you';
-    document.getElementById('foot').style.display = 'none';
+    document.getElementById('d-title').textContent='Thank you';
+    document.getElementById('foot').style.display='none';
   }catch(e){ toast(e.message); }
   finally{ btn.disabled=false; btn.textContent='Submit order'; }
 });
 
-// --- PDF ---
+// ----- PDF -----
 document.getElementById('pdf-btn').addEventListener('click', ()=>{
   const items = cartItems(); if(!items.length){ toast('Cart is empty'); return; }
   if(!window.jspdf){ toast('PDF library still loading…'); return; }
@@ -382,11 +535,10 @@ document.getElementById('pdf-btn').addEventListener('click', ()=>{
   y+=10; doc.line(M, y, 555, y); y+=22;
   doc.setFont(undefined,'bold'); doc.setFontSize(13);
   doc.text('Total: Rs '+cartTotal().toFixed(0), 555, y, {align:'right'});
-  doc.save('quotation-'+HANDLE+'.pdf');
-  toast('PDF downloaded');
+  doc.save('quotation-'+HANDLE+'.pdf'); toast('PDF downloaded');
 });
 
-// --- WhatsApp ---
+// ----- WhatsApp -----
 document.getElementById('wa-btn').addEventListener('click', ()=>{
   const items = cartItems(); if(!items.length){ toast('Cart is empty'); return; }
   if(!WHATSAPP){ toast('Seller has not set WhatsApp'); return; }
@@ -395,6 +547,26 @@ document.getElementById('wa-btn').addEventListener('click', ()=>{
   const num = WHATSAPP.replace(/[^0-9]/g,'');
   window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg), '_blank', 'noopener');
 });
+
+// ----- Buyer Gate (Feature 4) -----
+(function gateInit(){
+  if(!GATE.enabled) return;
+  const existing = loadBuyer();
+  if(existing && (existing.name || !GATE.required)) return;  // already passed
+  document.body.classList.add('gate-locked');
+  const submit = ()=>{
+    const name = document.getElementById('g-name').value.trim();
+    const mobile = document.getElementById('g-mobile').value.trim();
+    if(GATE.required && (!name || !mobile)){ toast('Please fill both fields'); return; }
+    saveBuyer({name, mobile});
+    // Best-effort lead capture (don't block on failure)
+    fetch('/api/storefront/'+HANDLE+'/visitors', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, mobile})}).catch(()=>{});
+    document.body.classList.remove('gate-locked');
+  };
+  document.getElementById('gate-submit').addEventListener('click', submit);
+  document.getElementById('gate-skip')?.addEventListener('click', ()=>{ saveBuyer({name:'', mobile:''}); document.body.classList.remove('gate-locked'); });
+  document.getElementById('gate-close-btn')?.addEventListener('click', ()=>{ saveBuyer({name:'', mobile:''}); document.body.classList.remove('gate-locked'); });
+})();
 
 // Initial paint
 renderAddSlots(); updateBadge();

@@ -165,6 +165,17 @@ class ShopCustomization(BaseModel):
     logo_url: Optional[str] = None
     banner_url: Optional[str] = None
     whatsapp_number: Optional[str] = None
+    # Contact & address (Feature 2)
+    address: Optional[str] = None
+    mobile_primary: Optional[str] = None
+    mobile_secondary: Optional[str] = None
+    landline: Optional[str] = None
+    maps_url: Optional[str] = None
+    # Buyer gate (Feature 4)
+    gate_enabled: Optional[bool] = None
+    gate_required: Optional[bool] = None
+    gate_title: Optional[str] = None
+    gate_subtitle: Optional[str] = None
 
 class GroupCreate(BaseModel):
     name: str
@@ -581,6 +592,32 @@ async def create_buyer_order(handle: str, body: OrderCreate):
     await db.orders.insert_one(order.copy())
     order.pop("_id", None)
     return order
+
+class VisitorIn(BaseModel):
+    name: Optional[str] = ""
+    mobile: Optional[str] = ""
+
+@api.post("/storefront/{handle}/visitors")
+async def record_visitor(handle: str, body: VisitorIn):
+    user = await db.users.find_one({"handle": handle.lower()}, {"_id": 0, "id": 1})
+    if not user:
+        raise HTTPException(404, "Store not found")
+    if not (body.name or body.mobile):
+        return {"ok": True}
+    doc = {
+        "id": gen_id(),
+        "seller_id": user["id"],
+        "name": (body.name or "").strip(),
+        "mobile": (body.mobile or "").strip(),
+        "created_at": now_iso(),
+    }
+    await db.visitors.insert_one(doc.copy())
+    return {"ok": True}
+
+@api.get("/visitors")
+async def list_visitors(user=Depends(current_user)):
+    cur = db.visitors.find({"seller_id": user["id"]}, {"_id": 0}).sort("created_at", -1)
+    return await cur.to_list(500)
 
 # ---------- Admin ----------
 class AdminLogin(BaseModel):
