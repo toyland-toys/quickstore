@@ -72,6 +72,10 @@ export default function Home() {
             <Ionicons name="eye-outline" size={22} color={theme.color.brand} />
             <Text style={styles.actionText}>Preview shop</Text>
           </Pressable>
+          <Pressable testID="home-visitors-btn" onPress={() => router.push('/visitors')} style={styles.action}>
+            <Ionicons name="people-outline" size={22} color={theme.color.brand} />
+            <Text style={styles.actionText}>Visitors</Text>
+          </Pressable>
         </ScrollView>
 
         <Text style={styles.section}>Recent orders</Text>

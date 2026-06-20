@@ -100,6 +100,11 @@ export default function StoreSettings() {
             <Text style={{ color: theme.color.brand, fontWeight: '700' }}>Preview buyer view</Text>
           </Pressable>
 
+          <Pressable testID="store-visitors-btn" onPress={() => router.push('/visitors')} style={[styles.previewBtn, { marginTop: 8 }]}>
+            <Ionicons name="people-outline" size={18} color={theme.color.brand} />
+            <Text style={{ color: theme.color.brand, fontWeight: '700' }}>View visitors / leads</Text>
+          </Pressable>
+
           <Text style={styles.section}>Shop appearance</Text>
           <FormField testID="store-title-input" label="Store title" placeholder="Zee Toys - Best Wooden Toys in Town" value={title} onChangeText={setTitle} />
           <FormField testID="store-tagline-input" label="Tagline" placeholder="Wholesale toy distributor" value={tagline} onChangeText={setTagline} />

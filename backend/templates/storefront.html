@@ -77,7 +77,7 @@ header.banner .inner{position:relative;z-index:1}
 .drawer{position:fixed;right:0;top:0;bottom:0;width:min(440px,100%);background:var(--surface);box-shadow:-12px 0 32px -8px rgba(0,0,0,.18);
   transform:translateX(100%);transition:transform .25s ease;z-index:60;display:flex;flex-direction:column}
 body.open .drawer{transform:translateX(0)}
-body.open .drawer-bg,body.pdp .drawer-bg,body.gate-locked .drawer-bg{opacity:1;pointer-events:auto}
+body.open .drawer-bg,body.pdp-open .drawer-bg,body.gate-locked .drawer-bg{opacity:1;pointer-events:auto}
 .drawer h2{margin:0;font-size:18px}
 .dh{display:flex;align-items:center;justify-content:space-between;padding:18px;border-bottom:1px solid var(--border)}
 .dh button{background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--mute)}
@@ -111,7 +111,7 @@ body.checkout .actions{display:none}
 
 /* Product Detail Modal (Feature 1) */
 .pdp{position:fixed;left:0;right:0;bottom:0;top:0;background:var(--surface);z-index:62;transform:translateY(100%);transition:transform .28s ease;display:flex;flex-direction:column}
-body.pdp .pdp{transform:translateY(0)}
+body.pdp-open .pdp{transform:translateY(0)}
 .pdp-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2}
 .pdp-head button{background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--mute)}
 .pdp-body{flex:1;overflow-y:auto}
@@ -396,7 +396,7 @@ function applyAct(act, id){
     if(cart[id].qty <= p.min_quantity){ delete cart[id]; toast('Removed'); }
     else cart[id].qty -= 1;
   }
-  saveCart(cart); renderAddSlots(); renderCart(); if(document.body.classList.contains('pdp')) renderPdpCta(id);
+  saveCart(cart); renderAddSlots(); renderCart(); if(document.body.classList.contains('pdp-open')) renderPdpCta(id);
 }
 document.addEventListener('click', (e)=>{
   const t = e.target.closest('button[data-act]'); if(!t) return;
@@ -429,7 +429,7 @@ document.getElementById('chips')?.addEventListener('click', (e)=>{
 
 // Drawer
 const openCart = ()=>{ renderCart(); document.body.classList.add('open'); };
-const closeAll = ()=>{ document.body.classList.remove('open'); document.body.classList.remove('checkout'); document.body.classList.remove('pdp'); document.getElementById('d-title').textContent='Your cart'; };
+const closeAll = ()=>{ document.body.classList.remove('open'); document.body.classList.remove('checkout'); document.body.classList.remove('pdp-open'); document.getElementById('d-title').textContent='Your cart'; };
 document.getElementById('cart-open').addEventListener('click', openCart);
 document.getElementById('cart-close').addEventListener('click', closeAll);
 document.getElementById('drawer-bg').addEventListener('click', ()=>{ if(!document.body.classList.contains('gate-locked')) closeAll(); });
@@ -473,7 +473,7 @@ function openPdp(id){
     [...dots.children].forEach((d,j)=>d.classList.toggle('on', j===i));
   };
   renderPdpCta(id);
-  document.body.classList.add('pdp');
+  document.body.classList.add('pdp-open');
 }
 document.getElementById('pdp-close').addEventListener('click', closeAll);
 
