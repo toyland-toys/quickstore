@@ -5,7 +5,14 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://vendor-marketplace-190.preview.emergentagent.com").rstrip("/")
+# Point these tests at any running instance:
+#     TEST_BASE_URL=https://api.example.com pytest backend/tests
+# Defaults to a backend running locally on port 8000.
+BASE_URL = (
+    os.environ.get("TEST_BASE_URL")
+    or os.environ.get("EXPO_PUBLIC_BACKEND_URL")
+    or "http://localhost:8000"
+).rstrip("/")
 API = f"{BASE_URL}/api"
 
 UNIQUE = uuid.uuid4().hex[:8]

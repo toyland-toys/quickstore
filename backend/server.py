@@ -1,38 +1,32 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.templating import Jinja2Templates
-from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-import os
 import re
 import uuid
 import logging
 import bcrypt
 import jwt as pyjwt
-import boto3
-from botocore.config import Config as BotoConfig
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 
+import config
+import storage as storage_mod
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
+ROOT_DIR = config.ROOT_DIR
 
-MONGO_URL = os.environ["MONGO_URL"]
-DB_NAME = os.environ["DB_NAME"]
-JWT_SECRET = os.environ["JWT_SECRET"]
-JWT_EXP_DAYS = int(os.environ.get("JWT_EXP_DAYS", "30"))
-DEV_OTP_CODE = os.environ.get("DEV_OTP_CODE", "123456")
-B2_KEY_ID = os.environ.get("B2_KEY_ID", "")
-B2_APPLICATION_KEY = os.environ.get("B2_APPLICATION_KEY", "")
-B2_REGION = os.environ.get("B2_REGION", "us-east-005")
-B2_BUCKET = os.environ.get("B2_BUCKET", "quicksell")
-B2_ENDPOINT_URL = os.environ.get("B2_ENDPOINT_URL", "https://s3.us-east-005.backblazeb2.com")
-BACKEND_PUBLIC_URL = os.environ.get("BACKEND_PUBLIC_URL", "").rstrip("/")
+# Configuration lives in config.py and comes entirely from the environment.
+# See backend/.env.example for the full list.
+MONGO_URL = config.MONGO_URL
+DB_NAME = config.DB_NAME
+JWT_SECRET = config.JWT_SECRET
+JWT_EXP_DAYS = config.JWT_EXP_DAYS
+DEV_OTP_CODE = config.DEV_OTP_CODE
+BACKEND_PUBLIC_URL = config.BACKEND_PUBLIC_URL
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -44,39 +38,55 @@ templates = Jinja2Templates(directory=str(ROOT_DIR / "templates"))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("quicksell")
 
-# ---------- B2 client ----------
-def get_b2_client():
-    return boto3.client(
-        "s3",
-        region_name=B2_REGION,
-        endpoint_url=B2_ENDPOINT_URL,
-        aws_access_key_id=B2_KEY_ID,
-        aws_secret_access_key=B2_APPLICATION_KEY,
-        config=BotoConfig(signature_version="s3v4"),
-    )
+# ---------- Storage ----------
+def get_storage() -> storage_mod.Storage:
+    """The configured object store: local disk or any S3-compatible service."""
+    return storage_mod.get_storage()
 
-def build_b2_public_url(key: str) -> str:
-    # Stable, cacheable, no-expiry proxy URL. Bucket can stay private.
+def build_public_url(key: str) -> str:
+    """Stable, cacheable, never-expiring URL for an image.
+
+    Always points at this API's own /api/images proxy, so the bucket can stay
+    private and the URL stored in the database never goes stale. When
+    BACKEND_PUBLIC_URL is unset the URL is root-relative, which is what you want
+    if the frontend is served from this same origin.
+    """
+    from urllib.parse import quote
+
+    # safe="/" keeps slashes literal, so URLs are byte-identical to the ones
+    # already stored in existing databases. Keys are sanitised on the way in, so
+    # there is normally nothing to escape anyway.
+    encoded = quote(key, safe="/")
     if BACKEND_PUBLIC_URL:
-        return f"{BACKEND_PUBLIC_URL}/api/images?key={key}"
-    return f"/api/images?key={key}"
+        return f"{BACKEND_PUBLIC_URL}/api/images?key={encoded}"
+    return f"/api/images?key={encoded}"
 
-_B2_DIRECT_PREFIX = f"{B2_ENDPOINT_URL}/{B2_BUCKET}/"
+# Recognises a direct object-store URL for any S3-compatible provider, e.g.
+#   https://s3.us-east-005.backblazeb2.com/quicksell/sellers/<id>/<file>
+#   https://<bucket>.s3.<region>.amazonaws.com/sellers/<id>/<file>
+#   https://<account>.r2.cloudflarestorage.com/<bucket>/sellers/...
+# Legacy rows may hold one of these, with or without a presigned query string.
+_DIRECT_URL_RE = re.compile(r"^https?://[^/]+/(?:[^/]+/)*?(sellers/[^?]+)")
 
 def _proxy_url_for(value: str) -> str:
-    """Convert any legacy direct-B2 URL or a bare key into the stable proxy URL.
-    Idempotent: re-applying it keeps the proxy URL stable.
+    """Normalise any stored image value to the stable proxy URL.
+
+    Handles values already in proxy form, bare storage keys, and legacy direct
+    object-store URLs from any provider. Idempotent.
     """
     if not isinstance(value, str) or not value:
         return value
     # Already a proxy URL
     if "/api/images?key=" in value:
         return value
-    # Legacy direct B2 URL (possibly with presigned query string)
-    if value.startswith(_B2_DIRECT_PREFIX):
-        rest = value[len(_B2_DIRECT_PREFIX):]
-        key = rest.split("?", 1)[0]
-        return build_b2_public_url(key)
+    # A bare storage key
+    if value.startswith("sellers/"):
+        return build_public_url(value.split("?", 1)[0])
+    # Legacy direct object-store URL (possibly presigned)
+    match = _DIRECT_URL_RE.match(value)
+    if match:
+        return build_public_url(match.group(1))
+    # Something else entirely (an external image URL, say) — leave it alone.
     return value
 
 def normalize_image_urls(urls: List[str]) -> List[str]:
@@ -412,33 +422,65 @@ async def delete_product(pid: str, user=Depends(current_user)):
     await db.products.delete_one({"id": pid, "seller_id": user["id"]})
     return {"ok": True}
 
-# ---------- Uploads (Backblaze B2 presigned PUT) ----------
+# ---------- Uploads (presigned PUT, backend-agnostic) ----------
 @api.post("/uploads/presign")
 async def presign_upload(body: PresignReq, user=Depends(current_user)):
+    """Hand the client a URL it can PUT the image bytes to.
+
+    With the S3 backend that URL points straight at the object store and the
+    bytes never pass through this server. With the local backend it points back
+    at PUT /api/uploads/direct below. Either way the client code is the same.
+    """
     safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", body.filename)[:80]
     key = f"sellers/{user['id']}/{gen_id()}-{safe_name}"
     try:
-        s3 = get_b2_client()
-        url = s3.generate_presigned_url(
-            ClientMethod="put_object",
-            Params={"Bucket": B2_BUCKET, "Key": key, "ContentType": body.content_type},
-            ExpiresIn=600,
-        )
+        url = get_storage().presign_put(key, body.content_type)
     except Exception as e:
         logger.exception("presign failed")
         raise HTTPException(500, f"Presign failed: {e}")
-    return {"upload_url": url, "key": key, "public_url": build_b2_public_url(key), "expires_in": 600}
+    return {
+        "upload_url": url,
+        "key": key,
+        "public_url": build_public_url(key),
+        "expires_in": config.UPLOAD_URL_TTL,
+    }
+
+@api.put("/uploads/direct")
+async def upload_direct(request: Request, key: str, content_type: str, expires: int, signature: str):
+    """Receiving end of a local-storage presigned upload.
+
+    Authorised by the HMAC signature in the query string rather than by a bearer
+    token, exactly like a presigned S3 URL: the signature covers the key, the
+    content type and the expiry, so it cannot be reused for another object or
+    replayed once it has expired. Unused when STORAGE_BACKEND=s3.
+    """
+    store = get_storage()
+    if not isinstance(store, storage_mod.LocalStorage):
+        raise HTTPException(404, "Direct uploads are only served by the local storage backend")
+    try:
+        store.verify_put_token(key, content_type, expires, signature)
+    except storage_mod.StorageError as e:
+        raise HTTPException(403, str(e))
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "Empty upload")
+    if len(body) > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            413, f"Upload exceeds MAX_UPLOAD_BYTES ({config.MAX_UPLOAD_BYTES} bytes)"
+        )
+    try:
+        store.write(key, body, content_type)
+    except storage_mod.StorageError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "key": key, "public_url": build_public_url(key), "size": len(body)}
 
 @api.get("/uploads/signed-get")
 async def signed_get(key: str, user=Depends(current_user)):
     try:
-        s3 = get_b2_client()
-        url = s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={"Bucket": B2_BUCKET, "Key": key},
-            ExpiresIn=3600,
-        )
-        return {"url": url}
+        return {"url": get_storage().presign_get(key, expires_in=3600)}
+    except storage_mod.StorageError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(500, f"Signed get failed: {e}")
 
@@ -458,25 +500,32 @@ def _is_heic_key(key: str) -> bool:
 
 @api.get("/images")
 async def images_proxy(key: str):
-    if not key or ".." in key:
+    try:
+        storage_mod.validate_key(key)
+    except storage_mod.StorageError:
         raise HTTPException(400, "Invalid key")
     try:
-        s3 = get_b2_client()
-        obj = s3.get_object(Bucket=B2_BUCKET, Key=key)
-    except Exception as e:
+        raw_body, media_type, content_length = get_storage().open(key)
+    except storage_mod.NotFound as e:
         logger.warning(f"image proxy miss for {key}: {e}")
         raise HTTPException(404, "Image not found")
+    except Exception as e:
+        logger.exception("image proxy error")
+        raise HTTPException(502, "Image backend unavailable")
 
-    media_type = obj.get("ContentType") or "image/jpeg"
-    raw_body = obj["Body"]
+    media_type = media_type or "image/jpeg"
+
+    cache_headers = {"Cache-Control": "public, max-age=31536000, immutable"}
 
     # Transcode HEIC/HEIF to JPEG so all browsers (Chrome/FF/Edge/Android) can render.
     needs_transcode = _HEIC_OK and (
         _is_heic_key(key) or media_type.lower() in ("image/heic", "image/heif")
     )
     if needs_transcode:
+        # The body is consumed to transcode, so read it all up front: if the
+        # transcode fails we still have the original bytes to fall back on.
+        data = raw_body.read()
         try:
-            data = raw_body.read()
             img = Image.open(io.BytesIO(data))
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
@@ -488,19 +537,22 @@ async def images_proxy(key: str):
             return StreamingResponse(
                 iter([jpeg]),
                 media_type="image/jpeg",
-                headers={
-                    "Cache-Control": "public, max-age=31536000, immutable",
-                    "Content-Length": str(len(jpeg)),
-                },
+                headers={**cache_headers, "Content-Length": str(len(jpeg))},
             )
         except Exception as e:
             logger.warning(f"HEIC transcode failed for {key}: {e}; falling back to original")
+            return StreamingResponse(
+                iter([data]),
+                media_type=media_type,
+                headers={**cache_headers, "Content-Length": str(len(data))},
+            )
 
-    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
-    cl = obj.get("ContentLength")
-    if cl:
-        headers["Content-Length"] = str(cl)
-    return StreamingResponse(raw_body.iter_chunks(chunk_size=64 * 1024), media_type=media_type, headers=headers)
+    if content_length:
+        cache_headers["Content-Length"] = str(content_length)
+    # iter_stream handles both a boto3 StreamingBody and a plain file object.
+    return StreamingResponse(
+        storage_mod.iter_stream(raw_body), media_type=media_type, headers=cache_headers
+    )
 
 # ---------- Orders ----------
 @api.get("/orders")
@@ -652,19 +704,119 @@ async def update_admin_settings(body: AdminSettingsUpdate, x_admin_pin: Optional
     s = await get_settings()
     return {"otp_provider": s["otp_provider"]}
 
+# ---------- Health ----------
+@api.get("/health")
+async def health():
+    """Liveness/readiness probe: checks the database round-trips.
+
+    Point your platform's health check at /api/health (Kubernetes, ECS, Render,
+    Fly, Docker HEALTHCHECK, a load balancer — they all want one).
+    """
+    try:
+        await db.command("ping")
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "database": "unreachable", "detail": str(e)},
+        )
+    return {"ok": True, "database": "ok", "storage": config.STORAGE, "env": config.APP_ENV}
+
 # ---------- Mount ----------
 app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=config.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+def _mount_frontend() -> None:
+    """Optionally serve the built web app from this same process.
+
+    Set SERVE_FRONTEND=/path/to/frontend/dist (the output of `yarn build:web`) and
+    one container serves both the API and the UI on one origin — the simplest
+    thing to deploy. Leave it unset to host the frontend separately.
+    """
+    if not config.SERVE_FRONTEND:
+        return
+    from starlette.staticfiles import StaticFiles
+    from starlette.responses import FileResponse, Response
+
+    dist = Path(config.SERVE_FRONTEND)
+    if not dist.is_dir():
+        # Don't crash on import; config.validate() reports this properly at startup.
+        logger.error("SERVE_FRONTEND=%s is not a directory; not serving the frontend", dist)
+        return
+
+    index = dist / "index.html"
+
+    class SpaStaticFiles(StaticFiles):
+        """StaticFiles with a single-page-app fallback.
+
+        StaticFiles(html=True) serves index.html for a *directory*, but still
+        404s on a path that does not exist on disk. The app's routes are
+        client-side, so /groups or /onboarding/phone have no file behind them and
+        a hard refresh or a shared link would break. Anything not found is
+        therefore served index.html, and the router sorts it out in the browser.
+
+        Genuinely missing assets still 404 rather than silently returning HTML,
+        which would otherwise turn a mistyped script path into a confusing parse
+        error in the console.
+        """
+
+        _ASSET_SUFFIXES = {
+            ".js", ".mjs", ".css", ".map", ".json", ".png", ".jpg", ".jpeg",
+            ".gif", ".svg", ".webp", ".avif", ".ico", ".ttf", ".otf", ".woff",
+            ".woff2", ".wasm", ".txt", ".xml", ".webmanifest",
+        }
+
+        async def get_response(self, path: str, scope) -> Response:
+            from starlette.exceptions import HTTPException as StarletteHTTPException
+
+            try:
+                response = await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                # StaticFiles signals a miss by raising, not by returning a 404.
+                if exc.status_code != 404:
+                    raise
+                response = None
+
+            if response is not None and response.status_code != 404:
+                return response
+
+            # An unmatched /api/... path is a genuine 404, not a client route.
+            # Without this, a typo'd or removed endpoint would answer 200 with
+            # HTML, and every API client would report a JSON parse error instead
+            # of the 404 that actually happened.
+            normalised = path.replace("\\", "/").lstrip("/")
+            if normalised == "api" or normalised.startswith("api/"):
+                raise StarletteHTTPException(status_code=404, detail="Not Found")
+
+            # A missing file with an asset extension is a genuine 404. Returning
+            # index.html for it would turn a bad script path into a baffling
+            # "Unexpected token '<'" in the console instead of a clear 404.
+            if Path(path).suffix.lower() in self._ASSET_SUFFIXES:
+                if response is not None:
+                    return response
+                raise StarletteHTTPException(status_code=404)
+
+            # Everything else is treated as a client-side route.
+            # index.html must not be cached, or a redeploy would be invisible to
+            # browsers still holding the old one.
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+    app.mount("/", SpaStaticFiles(directory=str(dist), html=True), name="frontend")
+    logger.info("serving frontend from %s", dist)
+
 @app.on_event("startup")
 async def on_startup():
+    # Fail fast and loudly on a misconfigured environment, before taking traffic.
+    config.validate()
+    logger.info("config: %s", config.summary())
+    get_storage()
+
     # Clean up legacy explicit-null handle docs that block the new partial index.
     await db.users.update_many({"handle": None}, {"$unset": {"handle": ""}})
     # Drop legacy sparse index if present, then recreate as partial-filter.
@@ -681,8 +833,8 @@ async def on_startup():
     await db.products.create_index([("seller_id", 1), ("created_at", -1)])
     await db.groups.create_index([("seller_id", 1)])
     await db.orders.create_index([("seller_id", 1), ("created_at", -1)])
-    # One-time normalization: rewrite any legacy presigned/direct B2 URLs in products
-    # to the stable proxy form so they survive future write-backs.
+    # One-time normalization: rewrite any legacy presigned/direct object-store URLs
+    # in products to the stable proxy form so they survive future write-backs.
     async for p in db.products.find({"image_urls": {"$exists": True, "$ne": []}}, {"id": 1, "image_urls": 1}):
         urls = p.get("image_urls") or []
         cleaned = normalize_image_urls(urls)
@@ -694,3 +846,7 @@ async def on_startup():
 @app.on_event("shutdown")
 async def on_shutdown():
     client.close()
+
+
+# Mounted last so the /api routes above always win over the static catch-all.
+_mount_frontend()

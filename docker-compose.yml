@@ -1,0 +1,80 @@
+# QuickSell — full stack: MongoDB + backend API + web frontend.
+#
+#     cp .env.example .env        # then set JWT_SECRET
+#     docker compose up -d --build
+#     open http://localhost:8080
+#
+# Nothing here is specific to a hosting provider. The same three services run on
+# a laptop, a single VPS, or as a starting point for Kubernetes/ECS manifests.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # Not published to the host by default — only the backend needs to reach it.
+    # Uncomment to inspect the database with a local client such as Compass.
+    # ports:
+    #   - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # The backend waits for this, so it never starts against a database that is
+      # still initialising.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: ${DB_NAME:-quicksell}
+      # Required. Set it in .env — the stack refuses to start without it.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (python -c "import secrets; print(secrets.token_urlsafe(48))")}
+      DEV_OTP_CODE: ${DEV_OTP_CODE:-123456}
+      # Empty means "emit root-relative URLs", which is correct here because the
+      # frontend proxies /api on the same origin the browser is using.
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      # Images on a persistent volume by default. To use an object store instead,
+      # set STORAGE_BACKEND=s3 and the S3_* variables in .env.
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      MEDIA_ROOT: /data/media
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+    volumes:
+      - media-data:/data/media
+    # Published so you can curl the API directly; the browser goes via frontend.
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Left empty on purpose: the bundle resolves the API at runtime, so this
+        # image is not tied to one environment. Set it only if you want the URL
+        # compiled in.
+        EXPO_PUBLIC_BACKEND_URL: ${EXPO_PUBLIC_BACKEND_URL:-}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      BACKEND_ORIGIN: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  mongo-data:
+  media-data:

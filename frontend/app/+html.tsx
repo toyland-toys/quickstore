@@ -17,6 +17,13 @@ export default function Root({ children }: PropsWithChildren) {
           If you want to enable scrolling, remove `ScrollViewStyleReset` and
           set `overflow: auto` on the body style below.
         */}
+        {/*
+          Runtime configuration, loaded before the app bundle so one built bundle
+          can be deployed to any host. Served from public/config.js; see that file.
+          `defer` is deliberately omitted — this must run before the app reads it.
+        */}
+        <script src="/config.js" />
+
         <ScrollViewStyleReset />
         <style
           dangerouslySetInnerHTML={{
