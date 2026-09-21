@@ -9,7 +9,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { theme, STATUS_OPTIONS, STATUS_COLORS } from '@/src/theme';
 import { FormField } from '@/src/components/FormField';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
-import { api, uploadToB2 } from '@/src/api/client';
+import { api, uploadImage } from '@/src/api/client';
 
 type Props = { mode: 'new' | 'edit' };
 
@@ -61,7 +61,7 @@ export function ProductForm({ mode }: Props) {
       const name = `image-${Date.now()}.jpg`;
       const ct = 'image/jpeg';
       const presign: any = await api('/uploads/presign', { method: 'POST', body: { filename: name, content_type: ct } });
-      await uploadToB2(presign.upload_url, manipulated.uri, ct);
+      await uploadImage(presign.upload_url, manipulated.uri, ct);
       setImages(curr => [...curr, presign.public_url]);
     } catch (e: any) {
       Alert.alert('Upload failed', e.message);

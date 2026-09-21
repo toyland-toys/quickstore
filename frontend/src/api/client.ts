@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BACKEND_URL } from '../config';
 
 const KEY = 'qs_token';
 const USER_KEY = 'qs_user';
@@ -21,7 +22,9 @@ const safeStore = {
   },
 };
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Resolved in src/config.ts: runtime override, then build-time env var, then the
+// current origin on web, then the Expo dev host. '' means "this origin".
+const BASE = BACKEND_URL;
 
 let tokenCache: string | null = null;
 let adminPinCache: string | null = null;
@@ -88,10 +91,22 @@ export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise
   return json as T;
 }
 
-export async function uploadToB2(uploadUrl: string, uri: string, contentType: string) {
+/**
+ * PUT an image to a presigned upload URL from POST /api/uploads/presign.
+ *
+ * Storage-agnostic: that URL points at whatever object store the backend is
+ * configured with (S3, B2, R2, MinIO, Spaces), or back at the backend's own
+ * /api/uploads/direct endpoint when it stores files on local disk. This client
+ * does not need to know which.
+ */
+export async function uploadImage(uploadUrl: string, uri: string, contentType: string) {
   const resp = await fetch(uri);
   const blob = await resp.blob();
-  const put = await fetch(uploadUrl, {
+  // A local-storage backend with no BACKEND_PUBLIC_URL configured returns a
+  // root-relative upload URL. Browsers resolve that against the current origin,
+  // but React Native's fetch requires an absolute URL, so resolve it here.
+  const target = uploadUrl.startsWith('/') ? `${BASE}${uploadUrl}` : uploadUrl;
+  const put = await fetch(target, {
     method: 'PUT',
     headers: { 'Content-Type': contentType },
     body: blob,
@@ -101,3 +116,6 @@ export async function uploadToB2(uploadUrl: string, uri: string, contentType: st
     throw new Error(`Upload failed (${put.status}): ${t.slice(0, 120)}`);
   }
 }
+
+/** @deprecated Storage is no longer Backblaze-specific — use uploadImage. */
+export const uploadToB2 = uploadImage;

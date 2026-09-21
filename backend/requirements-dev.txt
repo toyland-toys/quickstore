@@ -1,0 +1,17 @@
+# Development and test tooling.
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# Not installed in production images.
+
+-r requirements.txt
+
+# --- Tests ---
+pytest>=8.0.0
+requests>=2.31.0       # the API tests drive a running server over HTTP
+
+# --- Lint / format / typecheck ---
+black>=24.1.1
+isort>=5.13.2
+flake8>=7.0.0
+mypy>=1.8.0

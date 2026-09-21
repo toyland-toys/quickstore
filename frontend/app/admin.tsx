@@ -7,8 +7,10 @@ import { theme } from '@/src/theme';
 import { FormField } from '@/src/components/FormField';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { getAdminPin, setAdminPin } from '@/src/api/client';
+import { BACKEND_URL } from '@/src/config';
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Resolved in src/config.ts (runtime override, build-time env, same origin, dev host).
+const BASE = BACKEND_URL;
 
 export default function Admin() {
   const router = useRouter();

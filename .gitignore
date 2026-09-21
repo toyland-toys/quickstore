@@ -75,6 +75,11 @@ agenthub/agents/youtube/db
 
 # Build caches
 .cache/
+frontend/.metro-cache/
+
+# Locally stored uploads (STORAGE_BACKEND=local)
+backend/media/
+media/
 
 memory/test_credentials.md
 
@@ -83,6 +88,9 @@ android-sdk/
 .env
 .env.*
 *.env
+# ...but the templates are documentation and must be committed.
+!.env.example
+!**/.env.example
 credentials.json
 *.key
 .credentials

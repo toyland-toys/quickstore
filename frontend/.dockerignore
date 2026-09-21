@@ -1,0 +1,11 @@
+node_modules/
+.metro-cache/
+.expo/
+dist/
+web-build/
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore
+*.log
