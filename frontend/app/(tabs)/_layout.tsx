@@ -6,13 +6,13 @@ import { theme } from '@/src/theme';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  // Additive, never shrinking: the base 78/8/22 sizing is the original,
-  // known-good layout (plenty of room for icon + label on every device that
-  // has no safe-area inset, which is most Android phones and any desktop/
-  // emulator). insets.bottom is added on top of that floor so a device with a
-  // home-indicator (notched iPhones) gets extra clearance, instead of
-  // insets.bottom *replacing* the padding and shrinking the bar below that
-  // known-good size on every device that reports no inset.
+  // height:78/paddingTop:8 unchanged from the original; paddingBottom dropped
+  // from 22 to 12 -- confirmed by direct inspection that the label/icon were
+  // being clipped by insufficient room inside the fixed-height bar (78 - 8 -
+  // 22 = 48px of content room), not by anything overlapping it from outside.
+  // 78 - 8 - 12 = 58px fixed that. insets.bottom is still added on top so a
+  // device with a home indicator (notched iPhones) gets extra clearance
+  // beyond this, without shrinking the base that fixed the clipping.
   const insetBottom = Math.max(0, insets.bottom);
 
   return (
@@ -26,7 +26,7 @@ export default function TabsLayout() {
           borderTopColor: theme.color.border,
           height: 78 + insetBottom,
           paddingTop: 8,
-          paddingBottom: 22 + insetBottom,
+          paddingBottom: 12 + insetBottom,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
