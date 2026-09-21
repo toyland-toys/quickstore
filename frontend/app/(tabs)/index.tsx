@@ -55,28 +55,33 @@ export default function Home() {
         </View>
 
         <Text style={styles.section}>Quick actions</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 20 }}>
+        <View style={{ gap: 10 }}>
           <Pressable testID="home-add-product-btn" onPress={() => router.push('/product/new')} style={styles.action}>
             <Ionicons name="add-circle" size={22} color={theme.color.brand} />
             <Text style={styles.actionText}>Add product</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.color.onSurfaceMuted} />
           </Pressable>
           <Pressable testID="home-groups-btn" onPress={() => router.push('/groups')} style={styles.action}>
             <Ionicons name="folder-outline" size={22} color={theme.color.brand} />
             <Text style={styles.actionText}>Manage groups</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.color.onSurfaceMuted} />
           </Pressable>
           <Pressable testID="home-customize-btn" onPress={() => router.push('/(tabs)/store')} style={styles.action}>
             <Ionicons name="color-palette-outline" size={22} color={theme.color.brand} />
             <Text style={styles.actionText}>Customize store</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.color.onSurfaceMuted} />
           </Pressable>
           <Pressable testID="home-preview-btn" onPress={() => router.push('/storefront-preview')} style={styles.action}>
             <Ionicons name="eye-outline" size={22} color={theme.color.brand} />
             <Text style={styles.actionText}>Preview shop</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.color.onSurfaceMuted} />
           </Pressable>
           <Pressable testID="home-visitors-btn" onPress={() => router.push('/visitors')} style={styles.action}>
             <Ionicons name="people-outline" size={22} color={theme.color.brand} />
             <Text style={styles.actionText}>Visitors</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.color.onSurfaceMuted} />
           </Pressable>
-        </ScrollView>
+        </View>
 
         <Text style={styles.section}>Recent orders</Text>
         {recent.length === 0 ? (
@@ -106,8 +111,8 @@ const styles = StyleSheet.create({
   statLabel: { color: theme.color.onSurfaceMuted, fontSize: 12 },
   statValue: { fontSize: 28, fontWeight: '700', marginTop: 6 },
   section: { fontSize: 14, fontWeight: '700', marginTop: 24, marginBottom: 12 },
-  action: { backgroundColor: theme.color.brandTertiary, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, alignItems: 'flex-start', minWidth: 140, gap: 6 },
-  actionText: { color: theme.color.onSurface, fontWeight: '600' },
+  action: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.color.brandTertiary, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, gap: 12 },
+  actionText: { flex: 1, color: theme.color.onSurface, fontWeight: '600' },
   empty: { padding: 16, backgroundColor: theme.color.surfaceSecondary, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border },
   orderRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.color.surfaceSecondary, padding: 14, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: theme.color.border },
 });
