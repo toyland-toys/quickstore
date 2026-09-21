@@ -1,19 +1,29 @@
 #!/usr/bin/env node
 /**
- * Inject <script src="/config.js"> into the exported index.html.
+ * Patch the exported index.html for things app/+html.tsx cannot reach.
  *
  * Why this exists: with `web.output: "single"` in app.json, Expo generates
  * index.html from its own internal template and ignores app/+html.tsx entirely.
- * A script tag added there never reaches the build, so the runtime config file
- * would be shipped but never loaded — and the app would silently fall back to
- * same-origin, which is wrong whenever the API is on another host.
+ * Anything added there — a script tag, a meta tag, a style override — never
+ * reaches the build. This runs after `expo export` and patches the real
+ * generated file instead. Idempotent: every patch below checks for its own
+ * marker first, so re-running (or switching app.json to `output: "static"`,
+ * where +html.tsx *is* honoured and would already contain this content) is a
+ * no-op.
  *
- * Runs after `expo export`. Idempotent: if the tag is already present (which it
- * would be if you switch app.json to `output: "static"`, where +html.tsx *is*
- * honoured), nothing changes.
- *
- * The tag is inserted before the app bundle and deliberately without `defer`, so
- * window.__QUICKSTORE_CONFIG__ is set before src/config.ts reads it.
+ * Patches:
+ *   1. Inject <script src="/config.js">, without `defer`, so runtime config is
+ *      set before the app bundle reads it. Without this, config.js would ship
+ *      but never load, and the app would silently fall back to same-origin.
+ *   2. Add `viewport-fit=cover` to the viewport meta tag, and drive
+ *      html/body's height from a `--app-vh` custom property (falling back to
+ *      100dvh, then 100%) instead of a plain height:100%. A plain percentage
+ *      resolves against the *layout* viewport, which some mobile browsers
+ *      keep taller than what is actually visible around a collapsible
+ *      address/toolbar — hiding fixed-position UI (like the tab bar) behind
+ *      that chrome. A small inline script sets --app-vh from the
+ *      VisualViewport API (falling back to window.innerHeight), which tracks
+ *      the real visible height even where dvh itself is unreliable.
  */
 
 const fs = require("fs");
@@ -22,7 +32,7 @@ const path = require("path");
 const DIST = process.env.EXPO_WEB_OUTPUT_DIR || path.join(__dirname, "..", "dist");
 const INDEX = path.join(DIST, "index.html");
 const CONFIG = path.join(DIST, "config.js");
-const TAG = '<script src="/config.js"></script>';
+const CONFIG_TAG = '<script src="/config.js"></script>';
 
 function fail(message) {
   console.error(`inject-runtime-config: ${message}`);
@@ -43,21 +53,88 @@ if (!fs.existsSync(CONFIG)) {
 }
 
 let html = fs.readFileSync(INDEX, "utf8");
+let changed = false;
+
+// --- 1. Runtime backend config script -------------------------------------
 
 if (html.includes('src="/config.js"')) {
-  console.log("inject-runtime-config: already present, nothing to do");
-  process.exit(0);
-}
-
-// Prefer inserting just before the bundle script; fall back to </head>.
-const bundleMatch = html.match(/<script src="\/_expo\/[^"]+"[^>]*><\/script>/);
-if (bundleMatch) {
-  html = html.replace(bundleMatch[0], `${TAG}\n    ${bundleMatch[0]}`);
-} else if (html.includes("</head>")) {
-  html = html.replace("</head>", `  ${TAG}\n  </head>`);
+  console.log("inject-runtime-config: config.js tag already present, skipping");
 } else {
-  fail("could not find an insertion point in index.html");
+  const bundleMatch = html.match(/<script src="\/_expo\/[^"]+"[^>]*><\/script>/);
+  if (bundleMatch) {
+    html = html.replace(bundleMatch[0], `${CONFIG_TAG}\n    ${bundleMatch[0]}`);
+  } else if (html.includes("</head>")) {
+    html = html.replace("</head>", `  ${CONFIG_TAG}\n  </head>`);
+  } else {
+    fail("could not find an insertion point for the config.js tag in index.html");
+  }
+  console.log("inject-runtime-config: added /config.js tag");
+  changed = true;
 }
 
-fs.writeFileSync(INDEX, html);
-console.log("inject-runtime-config: added /config.js to index.html");
+// --- 2. viewport-fit=cover ---------------------------------------------------
+
+const viewportMatch = html.match(/<meta\s+name="viewport"\s+content="([^"]*)"\s*\/>/);
+if (!viewportMatch) {
+  fail("could not find the viewport meta tag in index.html");
+} else if (viewportMatch[1].includes("viewport-fit")) {
+  console.log("inject-runtime-config: viewport-fit already present, skipping");
+} else {
+  html = html.replace(
+    viewportMatch[0],
+    `<meta name="viewport" content="${viewportMatch[1]}, viewport-fit=cover" />`
+  );
+  console.log("inject-runtime-config: added viewport-fit=cover");
+  changed = true;
+}
+
+// --- 3. --app-vh-driven height instead of plain height:100% ----------------
+
+const VH_MARKER = "--app-vh";
+if (html.includes(VH_MARKER)) {
+  console.log("inject-runtime-config: --app-vh height fix already present, skipping");
+} else {
+  const resetStyleMatch = html.match(/<style id="expo-reset">[\s\S]*?<\/style>/);
+  if (!resetStyleMatch) {
+    fail("could not find the #expo-reset style block in index.html");
+  }
+  const patchedStyle = resetStyleMatch[0].replace(
+    /html,\s*\n\s*body\s*\{\s*\n\s*height:\s*100%;\s*\n\s*\}/,
+    `html,\n      body {\n        height: 100%;\n        height: 100dvh;\n        height: var(${VH_MARKER}, 100dvh);\n      }`
+  );
+  if (patchedStyle === resetStyleMatch[0]) {
+    fail("could not locate the html/body height rule inside #expo-reset to patch");
+  }
+  html = html.replace(resetStyleMatch[0], patchedStyle);
+
+  const vhScript =
+    "<script>" +
+    "(function(){" +
+    "function setAppVh(){" +
+    "var vv=window.visualViewport;" +
+    "var h=vv?vv.height:window.innerHeight;" +
+    `document.documentElement.style.setProperty('${VH_MARKER}',h+'px');` +
+    "}" +
+    "setAppVh();" +
+    "window.addEventListener('resize',setAppVh);" +
+    "window.addEventListener('orientationchange',setAppVh);" +
+    "if(window.visualViewport){" +
+    "window.visualViewport.addEventListener('resize',setAppVh);" +
+    "window.visualViewport.addEventListener('scroll',setAppVh);" +
+    "}" +
+    "})();" +
+    "</script>";
+
+  if (!html.includes("<head>")) {
+    fail("could not find <head> in index.html to insert the viewport-height script");
+  }
+  html = html.replace("<head>", `<head>\n    ${vhScript}`);
+  console.log("inject-runtime-config: added --app-vh height fix");
+  changed = true;
+}
+
+if (changed) {
+  fs.writeFileSync(INDEX, html);
+} else {
+  console.log("inject-runtime-config: nothing to do");
+}
