@@ -4,6 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
 import re
 import uuid
 import logging
@@ -505,7 +506,13 @@ async def images_proxy(key: str):
     except storage_mod.StorageError:
         raise HTTPException(400, "Invalid key")
     try:
-        raw_body, media_type, content_length = get_storage().open(key)
+        # get_storage().open() makes a blocking network call (boto3 has no async
+        # API). Run it off the event loop so one slow fetch from the storage
+        # backend can't stall every other request this single-worker process is
+        # handling concurrently -- that stall is what surfaces to clients as a
+        # 502, since nothing else (including health checks) can be served while
+        # the loop is blocked.
+        raw_body, media_type, content_length = await asyncio.to_thread(get_storage().open, key)
     except storage_mod.NotFound as e:
         logger.warning(f"image proxy miss for {key}: {e}")
         raise HTTPException(404, "Image not found")
@@ -524,7 +531,8 @@ async def images_proxy(key: str):
     if needs_transcode:
         # The body is consumed to transcode, so read it all up front: if the
         # transcode fails we still have the original bytes to fall back on.
-        data = raw_body.read()
+        # Blocking I/O against the storage backend, so off the event loop too.
+        data = await asyncio.to_thread(raw_body.read)
         try:
             img = Image.open(io.BytesIO(data))
             if img.mode not in ("RGB", "L"):
