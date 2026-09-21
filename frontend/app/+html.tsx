@@ -24,44 +24,23 @@ export default function Root({ children }: PropsWithChildren) {
         */}
         <script src="/config.js" />
 
-        {/*
-          Some mobile browsers' in-page chrome (address bar, bottom toolbar) doesn't
-          resize the CSS layout viewport, so 100vh/100dvh alone can still measure
-          taller than what's actually visible, pinning our fixed-position root div's
-          bottom edge behind that chrome. Track the real visible height via the
-          VisualViewport API (falls back to window.innerHeight where it's unsupported)
-          and drive the div's height from that CSS variable instead.
-        */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function () {
-                function setAppVh() {
-                  var vv = window.visualViewport;
-                  var h = vv ? vv.height : window.innerHeight;
-                  document.documentElement.style.setProperty('--app-vh', h + 'px');
-                }
-                setAppVh();
-                window.addEventListener('resize', setAppVh);
-                window.addEventListener('orientationchange', setAppVh);
-                if (window.visualViewport) {
-                  window.visualViewport.addEventListener('resize', setAppVh);
-                  window.visualViewport.addEventListener('scroll', setAppVh);
-                }
-              })();
-            `,
-          }}
-        />
-
         <ScrollViewStyleReset />
         <style
           dangerouslySetInnerHTML={{
             __html: `
-              /* Fixed to the layout viewport's edges, sized by the tallest height unit
-                 the browser gets right: --app-vh (measured live from VisualViewport) if
-                 the script above ran, else 100dvh, else 100vh. Without this, "bottom: 0"
-                 pins content below where a shown toolbar can cover it. */
-              body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; height: 100vh; height: 100dvh; height: var(--app-vh, 100dvh); }
+              /* Fixed to the layout viewport's edges, sized by 100dvh (falling back to
+                 100vh) rather than a plain percentage, which resolves against the
+                 *layout* viewport -- some mobile browsers keep that taller than what's
+                 actually visible around a collapsible address/toolbar, pinning this
+                 fixed-position root div's bottom edge (and the tab bar inside it)
+                 behind that chrome. A JS-measured VisualViewport-driven height was
+                 tried here too, but removed: Chrome DevTools' device-toolbar emulation
+                 doesn't always report visualViewport.height as the full emulated
+                 screen height, so it could make the root shorter than the real
+                 viewport there and leave a visible gap at the bottom -- worse than the
+                 dvh-unsupported case it was meant to cover, given how widely supported
+                 dvh already is. */
+              body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; height: 100vh; height: 100dvh; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }
             `,

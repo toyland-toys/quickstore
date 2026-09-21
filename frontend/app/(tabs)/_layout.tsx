@@ -6,7 +6,14 @@ import { theme } from '@/src/theme';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const tabBarPaddingBottom = Math.max(8, insets.bottom);
+  // Additive, never shrinking: the base 78/8/22 sizing is the original,
+  // known-good layout (plenty of room for icon + label on every device that
+  // has no safe-area inset, which is most Android phones and any desktop/
+  // emulator). insets.bottom is added on top of that floor so a device with a
+  // home-indicator (notched iPhones) gets extra clearance, instead of
+  // insets.bottom *replacing* the padding and shrinking the bar below that
+  // known-good size on every device that reports no inset.
+  const insetBottom = Math.max(0, insets.bottom);
 
   return (
     <Tabs
@@ -17,9 +24,9 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: theme.color.surfaceSecondary,
           borderTopColor: theme.color.border,
-          height: 56 + tabBarPaddingBottom,
+          height: 78 + insetBottom,
           paddingTop: 8,
-          paddingBottom: tabBarPaddingBottom,
+          paddingBottom: 22 + insetBottom,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}

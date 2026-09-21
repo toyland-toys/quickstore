@@ -16,14 +16,21 @@
  *      set before the app bundle reads it. Without this, config.js would ship
  *      but never load, and the app would silently fall back to same-origin.
  *   2. Add `viewport-fit=cover` to the viewport meta tag, and drive
- *      html/body's height from a `--app-vh` custom property (falling back to
- *      100dvh, then 100%) instead of a plain height:100%. A plain percentage
- *      resolves against the *layout* viewport, which some mobile browsers
- *      keep taller than what is actually visible around a collapsible
- *      address/toolbar — hiding fixed-position UI (like the tab bar) behind
- *      that chrome. A small inline script sets --app-vh from the
- *      VisualViewport API (falling back to window.innerHeight), which tracks
- *      the real visible height even where dvh itself is unreliable.
+ *      html/body's height from 100dvh (falling back to plain 100%) instead of
+ *      a plain height:100%. A plain percentage resolves against the *layout*
+ *      viewport, which some mobile browsers keep taller than what is actually
+ *      visible around a collapsible address/toolbar — hiding fixed-position UI
+ *      (like the tab bar) behind that chrome; 100dvh tracks the real visible
+ *      height instead.
+ *
+ *      An earlier version of this patch also set a JS-measured --app-vh
+ *      custom property from the VisualViewport API, on top of 100dvh, to
+ *      cover browsers with unreliable dvh support. Removed: Chrome DevTools'
+ *      device-toolbar emulation doesn't always report visualViewport.height
+ *      as the full emulated screen height, so that JS layer could make the
+ *      root shorter than the real viewport there, leaving a visible gap at
+ *      the bottom — a regression worse than the dvh-unsupported case it was
+ *      meant to cover, given how widely supported dvh already is.
  */
 
 const fs = require("fs");
@@ -88,11 +95,11 @@ if (!viewportMatch) {
   changed = true;
 }
 
-// --- 3. --app-vh-driven height instead of plain height:100% ----------------
+// --- 3. 100dvh-driven height instead of plain height:100% ------------------
 
-const VH_MARKER = "--app-vh";
-if (html.includes(VH_MARKER)) {
-  console.log("inject-runtime-config: --app-vh height fix already present, skipping");
+const DVH_MARKER = "100dvh";
+if (html.includes(DVH_MARKER)) {
+  console.log("inject-runtime-config: dvh height fix already present, skipping");
 } else {
   const resetStyleMatch = html.match(/<style id="expo-reset">[\s\S]*?<\/style>/);
   if (!resetStyleMatch) {
@@ -100,36 +107,13 @@ if (html.includes(VH_MARKER)) {
   }
   const patchedStyle = resetStyleMatch[0].replace(
     /html,\s*\n\s*body\s*\{\s*\n\s*height:\s*100%;\s*\n\s*\}/,
-    `html,\n      body {\n        height: 100%;\n        height: 100dvh;\n        height: var(${VH_MARKER}, 100dvh);\n      }`
+    `html,\n      body {\n        height: 100%;\n        height: ${DVH_MARKER};\n      }`
   );
   if (patchedStyle === resetStyleMatch[0]) {
     fail("could not locate the html/body height rule inside #expo-reset to patch");
   }
   html = html.replace(resetStyleMatch[0], patchedStyle);
-
-  const vhScript =
-    "<script>" +
-    "(function(){" +
-    "function setAppVh(){" +
-    "var vv=window.visualViewport;" +
-    "var h=vv?vv.height:window.innerHeight;" +
-    `document.documentElement.style.setProperty('${VH_MARKER}',h+'px');` +
-    "}" +
-    "setAppVh();" +
-    "window.addEventListener('resize',setAppVh);" +
-    "window.addEventListener('orientationchange',setAppVh);" +
-    "if(window.visualViewport){" +
-    "window.visualViewport.addEventListener('resize',setAppVh);" +
-    "window.visualViewport.addEventListener('scroll',setAppVh);" +
-    "}" +
-    "})();" +
-    "</script>";
-
-  if (!html.includes("<head>")) {
-    fail("could not find <head> in index.html to insert the viewport-height script");
-  }
-  html = html.replace("<head>", `<head>\n    ${vhScript}`);
-  console.log("inject-runtime-config: added --app-vh height fix");
+  console.log("inject-runtime-config: added dvh height fix");
   changed = true;
 }
 
