@@ -42,7 +42,7 @@ export default function Admin() {
     if (next === 'twilio' && !twilioConfigured) {
       Alert.alert(
         'Twilio not configured',
-        "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER on the backend, then try again."
+        "Set TWILIO_ACCOUNT_SID, either TWILIO_AUTH_TOKEN or TWILIO_API_KEY+TWILIO_API_SECRET, and either TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER on the backend, then try again."
       );
       return;
     }

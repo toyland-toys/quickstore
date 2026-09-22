@@ -93,17 +93,29 @@ DEV_OTP_CODE = _str("DEV_OTP_CODE", "123456")
 # Only consulted when the admin panel's otp_provider is switched to "twilio"
 # (stored in the DB, not here -- see server.py's /admin/settings). That switch
 # is itself rejected if these are unset, so the app never silently falls back
-# to a broken SMS path. TWILIO_MESSAGING_SERVICE_SID and TWILIO_FROM_NUMBER
-# are two ways to say the same thing (a Messaging Service simplifies sender
-# selection/scaling; a bare from-number works just as well for a single
-# number) -- set whichever one your Twilio setup uses.
+# to a broken SMS path.
+#
+# TWILIO_ACCOUNT_SID is always required. For the rest of the credential,
+# Twilio supports two schemes -- set one pair, not both:
+#   - TWILIO_AUTH_TOKEN: the account's own auth token.
+#   - TWILIO_API_KEY + TWILIO_API_SECRET: a scoped API key/secret pair,
+#     created separately from the account credential. Preferred if you have
+#     it, since it can be revoked on its own without rotating the account's
+#     main auth token.
+# TWILIO_MESSAGING_SERVICE_SID and TWILIO_FROM_NUMBER are two ways to say the
+# same thing (a Messaging Service simplifies sender selection/scaling; a bare
+# from-number works just as well for a single number) -- set whichever one
+# your Twilio setup uses.
 TWILIO_ACCOUNT_SID = _str("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = _str("TWILIO_AUTH_TOKEN")
+TWILIO_API_KEY = _str("TWILIO_API_KEY")
+TWILIO_API_SECRET = _str("TWILIO_API_SECRET")
 TWILIO_MESSAGING_SERVICE_SID = _str("TWILIO_MESSAGING_SERVICE_SID")
 TWILIO_FROM_NUMBER = _str("TWILIO_FROM_NUMBER")
+TWILIO_HAS_CREDENTIAL = bool(TWILIO_AUTH_TOKEN or (TWILIO_API_KEY and TWILIO_API_SECRET))
 TWILIO_CONFIGURED = bool(
     TWILIO_ACCOUNT_SID
-    and TWILIO_AUTH_TOKEN
+    and TWILIO_HAS_CREDENTIAL
     and (TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER)
 )
 

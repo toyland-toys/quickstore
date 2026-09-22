@@ -141,7 +141,13 @@ def send_otp_sms(mobile: str, code: str) -> None:
     from twilio.rest import Client
     from twilio.base.exceptions import TwilioRestException
 
-    client = Client(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN)
+    # Two ways to authenticate (see config.py): a scoped API key/secret pair,
+    # preferred when present since it can be revoked independently of the
+    # account's main auth token, or the auth token itself.
+    if config.TWILIO_API_KEY and config.TWILIO_API_SECRET:
+        client = Client(config.TWILIO_API_KEY, config.TWILIO_API_SECRET, config.TWILIO_ACCOUNT_SID)
+    else:
+        client = Client(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN)
     minutes = max(1, config.OTP_TTL_SECONDS // 60)
     kwargs: Dict[str, Any] = {
         "to": mobile,
@@ -816,8 +822,9 @@ async def update_admin_settings(body: AdminSettingsUpdate, s: Dict[str, Any] = D
             raise HTTPException(
                 400,
                 "Twilio isn't configured on the server. Set TWILIO_ACCOUNT_SID, "
-                "TWILIO_AUTH_TOKEN, and TWILIO_MESSAGING_SERVICE_SID or "
-                "TWILIO_FROM_NUMBER, then try again.",
+                "either TWILIO_AUTH_TOKEN or TWILIO_API_KEY+TWILIO_API_SECRET, "
+                "and either TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER, "
+                "then try again.",
             )
         update["otp_provider"] = body.otp_provider
     if body.admin_pin:
