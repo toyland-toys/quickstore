@@ -54,6 +54,11 @@ ENV BACKEND_ORIGIN=http://backend:8000
 # origin. Leave unset to use the /api proxy on this same origin.
 ENV FRONTEND_BACKEND_URL=""
 
+# Optionally pin the canonical public domain shown/copied for a seller's
+# storefront link (see src/config.ts). Leave unset to use whatever origin the
+# app is currently being viewed from.
+ENV FRONTEND_SHOP_ORIGIN=""
+
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

@@ -24,7 +24,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 /** Shape of the optional runtime config file (web deployments). */
-type RuntimeConfig = { backendUrl?: string };
+type RuntimeConfig = { backendUrl?: string; shopOrigin?: string };
 
 declare global {
   // eslint-disable-next-line no-var
@@ -101,19 +101,32 @@ export function apiUrl(path: string): string {
 /**
  * Origin buyers should use for a seller's public storefront.
  *
- * On web this is simply the current origin: nginx (see frontend/nginx.conf)
- * proxies a bare "/{handle}" on this same origin to the backend's storefront
- * route, so whatever domain the seller is viewing the app from is already the
- * domain buyers should use. No separate "public domain" setting to keep in
- * sync — it's automatically right whether that's a mapped custom domain, the
- * onrender.com URL, or a preview deploy.
+ * Resolved from the first of these that yields a value:
  *
- * Native builds have no such "current origin" a buyer would ever visit, so
- * this falls back to the backend's own /api/shop route, which works standalone.
+ *  1. A runtime override on web: `window.__QUICKSTORE_CONFIG__.shopOrigin`,
+ *     set the same way as backendUrl above (via config.js / FRONTEND_SHOP_ORIGIN
+ *     at container start). Pin this to the canonical public domain (e.g.
+ *     "https://nowsell.online") once one is mapped, so the link shown and
+ *     copied is always that domain — even for a seller who reaches the app via
+ *     a different working origin, such as the platform's own onrender.com URL
+ *     left reachable alongside a mapped custom domain.
+ *  2. The current origin, on web. nginx (see frontend/nginx.conf) proxies a
+ *     bare "/{handle}" on this same origin to the backend's storefront route,
+ *     so absent an explicit override, whatever domain the seller is viewing
+ *     the app from already works for buyers too -- correct by default on a
+ *     preview deploy or before a custom domain exists, with nothing to
+ *     configure.
+ *  3. The backend's own /api/shop route directly. Native builds have no
+ *     "current origin" a buyer would ever visit, so this is also the fallback
+ *     there.
  */
 export function publicShopOrigin(): string {
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin;
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const configured = window.__QUICKSTORE_CONFIG__?.shopOrigin;
+    if (typeof configured === 'string' && configured && !configured.startsWith('__')) {
+      return stripTrailingSlash(configured);
+    }
+    if (window.location?.origin) return window.location.origin;
   }
   return `${BACKEND_URL}/api/shop`;
 }

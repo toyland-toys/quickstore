@@ -189,6 +189,14 @@ can be promoted from staging to production by changing that one file — or by
 setting `FRONTEND_BACKEND_URL` on the frontend container, which rewrites it at
 start-up. Leave it empty and the app calls `/api` on its own origin.
 
+The same file also carries `shopOrigin`, the canonical public domain shown
+and copied for a seller's storefront link. Leave it empty and the app uses
+whatever origin it's currently being viewed from — correct by default, and
+all that's needed before a custom domain exists. Once one is mapped, set
+`FRONTEND_SHOP_ORIGIN` on the frontend container (e.g. `https://shop.example.com`)
+so the link is always that domain, even for a seller who reaches the app via
+another still-reachable origin, such as the platform's own default URL.
+
 Native app binaries have no runtime config file, so they do need
 `EXPO_PUBLIC_BACKEND_URL` set at build time.
 
