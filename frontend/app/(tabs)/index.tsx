@@ -39,7 +39,7 @@ export default function Home() {
             <Text style={styles.shopName} testID="home-shop-name">{me?.shop?.title || me?.handle || 'your shop'}</Text>
             <Text style={styles.handleLine}>{publicShopOriginDisplay()}/{me?.handle || '—'}</Text>
           </View>
-          <Pressable testID="home-admin-btn" onPress={() => router.push('/admin')} style={styles.iconBtn}>
+          <Pressable testID="home-change-pin-btn" onPress={() => router.push('/change-pin')} style={styles.iconBtn}>
             <Ionicons name="settings-outline" size={22} color={theme.color.onSurface} />
           </Pressable>
         </View>
