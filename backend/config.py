@@ -88,6 +88,47 @@ JWT_EXP_DAYS = _int("JWT_EXP_DAYS", 30)
 DEV_OTP_CODE = _str("DEV_OTP_CODE", "123456")
 
 # --------------------------------------------------------------------------
+# SMS OTP delivery (Twilio)
+# --------------------------------------------------------------------------
+# Only consulted when the admin panel's otp_provider is switched to "twilio"
+# (stored in the DB, not here -- see server.py's /admin/settings). That switch
+# is itself rejected if these are unset, so the app never silently falls back
+# to a broken SMS path. TWILIO_MESSAGING_SERVICE_SID and TWILIO_FROM_NUMBER
+# are two ways to say the same thing (a Messaging Service simplifies sender
+# selection/scaling; a bare from-number works just as well for a single
+# number) -- set whichever one your Twilio setup uses.
+TWILIO_ACCOUNT_SID = _str("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = _str("TWILIO_AUTH_TOKEN")
+TWILIO_MESSAGING_SERVICE_SID = _str("TWILIO_MESSAGING_SERVICE_SID")
+TWILIO_FROM_NUMBER = _str("TWILIO_FROM_NUMBER")
+TWILIO_CONFIGURED = bool(
+    TWILIO_ACCOUNT_SID
+    and TWILIO_AUTH_TOKEN
+    and (TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER)
+)
+
+# How long a sent OTP code stays valid, and how many wrong guesses are allowed
+# before it's invalidated outright (forcing a fresh code) -- both apply only to
+# the twilio provider; dev mode's fixed code has neither expiry nor a guess limit.
+OTP_TTL_SECONDS = _int("OTP_TTL_SECONDS", 300)
+OTP_MAX_ATTEMPTS = _int("OTP_MAX_ATTEMPTS", 5)
+# Minimum time between two OTP sends to the same number, so a script can't spam
+# a stranger's phone (or run up your Twilio bill) via /auth/request-otp.
+OTP_RESEND_COOLDOWN_SECONDS = _int("OTP_RESEND_COOLDOWN_SECONDS", 45)
+
+# --------------------------------------------------------------------------
+# Admin (app-owner) panel login
+# --------------------------------------------------------------------------
+# Guards the /admin/* endpoints -- not a seller's own app-open PIN (that's a
+# separate, per-seller feature; see /me/pin and app/pin-lock.tsx). After this
+# many wrong PINs in a row, further attempts are rejected outright for
+# ADMIN_LOGIN_LOCKOUT_SECONDS, regardless of whether the PIN offered is right,
+# so brute-forcing it takes a lot longer than guessing a 6-digit number would
+# otherwise take.
+ADMIN_LOGIN_MAX_ATTEMPTS = _int("ADMIN_LOGIN_MAX_ATTEMPTS", 5)
+ADMIN_LOGIN_LOCKOUT_SECONDS = _int("ADMIN_LOGIN_LOCKOUT_SECONDS", 15 * 60)
+
+# --------------------------------------------------------------------------
 # Public URL
 # --------------------------------------------------------------------------
 # The externally reachable base URL of this backend, e.g. https://api.example.com.

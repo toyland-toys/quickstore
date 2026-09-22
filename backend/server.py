@@ -6,6 +6,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 import re
+import secrets
 import uuid
 import logging
 import bcrypt
@@ -129,6 +130,33 @@ def verify_pin_hash(pin: str, hashed: str) -> bool:
     except Exception:
         return False
 
+def generate_otp_code() -> str:
+    return f"{secrets.randbelow(10 ** 6):06d}"
+
+def send_otp_sms(mobile: str, code: str) -> None:
+    """Send an OTP over SMS via Twilio. Synchronous (the Twilio SDK has no async
+    API) -- callers in an async route must run this via asyncio.to_thread, the
+    same reason get_storage().open() is, so one slow send can't stall every
+    other request this single-worker process is handling concurrently."""
+    from twilio.rest import Client
+    from twilio.base.exceptions import TwilioRestException
+
+    client = Client(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN)
+    minutes = max(1, config.OTP_TTL_SECONDS // 60)
+    kwargs: Dict[str, Any] = {
+        "to": mobile,
+        "body": f"Your QuickSell verification code is {code}. It expires in {minutes} minute(s).",
+    }
+    if config.TWILIO_MESSAGING_SERVICE_SID:
+        kwargs["messaging_service_sid"] = config.TWILIO_MESSAGING_SERVICE_SID
+    else:
+        kwargs["from_"] = config.TWILIO_FROM_NUMBER
+    try:
+        client.messages.create(**kwargs)
+    except TwilioRestException as exc:
+        logger.exception(f"twilio send failed for {mobile}")
+        raise HTTPException(502, "Could not send the SMS. Please try again shortly.") from exc
+
 def make_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
@@ -228,9 +256,29 @@ class AdminSettingsUpdate(BaseModel):
 async def get_settings() -> Dict[str, Any]:
     s = await db.settings.find_one({"id": "global"}, {"_id": 0})
     if not s:
-        s = {"id": "global", "otp_provider": "dev", "admin_pin": "0000", "created_at": now_iso()}
+        s = {
+            "id": "global",
+            "otp_provider": "dev",
+            "admin_pin_hash": hash_pin("0000"),
+            "admin_login_fail_count": 0,
+            "admin_locked_until": None,
+            "created_at": now_iso(),
+        }
         await db.settings.insert_one(s.copy())
         s.pop("_id", None)
+        return s
+    # One-time migration: an older version of this app stored the admin PIN in
+    # plaintext. Hash it and drop the plaintext field the first time it's seen.
+    if "admin_pin_hash" not in s:
+        pin_hash = hash_pin(s.get("admin_pin") or "0000")
+        await db.settings.update_one(
+            {"id": "global"},
+            {"$set": {"admin_pin_hash": pin_hash}, "$unset": {"admin_pin": ""}},
+        )
+        s["admin_pin_hash"] = pin_hash
+        s.pop("admin_pin", None)
+    s.setdefault("admin_login_fail_count", 0)
+    s.setdefault("admin_locked_until", None)
     return s
 
 # ---------- Auth ----------
@@ -246,8 +294,28 @@ async def request_otp(body: OtpRequest):
         raise HTTPException(400, "Invalid mobile number")
     if settings["otp_provider"] == "dev":
         return {"ok": True, "dev_mode": True, "dev_code": DEV_OTP_CODE}
-    # Twilio path (not implemented yet)
-    raise HTTPException(503, "SMS provider not configured. Enable dev mode in admin.")
+
+    existing = await db.otp_codes.find_one({"mobile_number": mobile}, {"_id": 0})
+    if existing:
+        elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(existing["last_sent_at"])).total_seconds()
+        if elapsed < config.OTP_RESEND_COOLDOWN_SECONDS:
+            wait = int(config.OTP_RESEND_COOLDOWN_SECONDS - elapsed)
+            raise HTTPException(429, f"Please wait {wait}s before requesting another code.")
+
+    code = generate_otp_code()
+    await db.otp_codes.update_one(
+        {"mobile_number": mobile},
+        {"$set": {
+            "mobile_number": mobile,
+            "code_hash": hash_pin(code),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=config.OTP_TTL_SECONDS)).isoformat(),
+            "attempts": 0,
+            "last_sent_at": now_iso(),
+        }},
+        upsert=True,
+    )
+    await asyncio.to_thread(send_otp_sms, mobile, code)
+    return {"ok": True, "dev_mode": False}
 
 @api.post("/auth/verify-otp")
 async def verify_otp(body: OtpVerify):
@@ -257,7 +325,19 @@ async def verify_otp(body: OtpVerify):
         if body.code != DEV_OTP_CODE:
             raise HTTPException(400, "Invalid OTP")
     else:
-        raise HTTPException(503, "SMS provider not configured.")
+        record = await db.otp_codes.find_one({"mobile_number": mobile}, {"_id": 0})
+        if not record:
+            raise HTTPException(400, "No code requested for this number. Request a new one.")
+        if datetime.now(timezone.utc) > datetime.fromisoformat(record["expires_at"]):
+            await db.otp_codes.delete_one({"mobile_number": mobile})
+            raise HTTPException(400, "Code expired. Request a new one.")
+        if record.get("attempts", 0) >= config.OTP_MAX_ATTEMPTS:
+            await db.otp_codes.delete_one({"mobile_number": mobile})
+            raise HTTPException(400, "Too many wrong attempts. Request a new code.")
+        if not verify_pin_hash(body.code, record["code_hash"]):
+            await db.otp_codes.update_one({"mobile_number": mobile}, {"$inc": {"attempts": 1}})
+            raise HTTPException(400, "Invalid OTP")
+        await db.otp_codes.delete_one({"mobile_number": mobile})
 
     user = await db.users.find_one({"mobile_number": mobile}, {"_id": 0})
     is_new = False
@@ -683,30 +763,67 @@ async def list_visitors(user=Depends(current_user)):
 class AdminLogin(BaseModel):
     pin: str
 
+async def check_admin_pin(pin: Optional[str]) -> Dict[str, Any]:
+    """Verify pin against the stored admin hash, with lockout after repeated
+    failures. Shared by /admin/login (pin in the request body, since it's the
+    very first call and the client has nowhere else to put it yet) and the two
+    /admin/settings routes (pin in the X-Admin-PIN header, via require_admin
+    below), so brute-forcing either path is equally rate-limited -- guarding
+    only one would leave the other as an unlimited-attempts bypass."""
+    s = await get_settings()
+    locked_until = s.get("admin_locked_until")
+    if locked_until:
+        locked_dt = datetime.fromisoformat(locked_until)
+        if locked_dt > datetime.now(timezone.utc):
+            remaining = max(1, int((locked_dt - datetime.now(timezone.utc)).total_seconds()))
+            raise HTTPException(429, f"Too many attempts. Try again in {remaining}s.")
+    if not pin or not verify_pin_hash(pin, s["admin_pin_hash"]):
+        fail_count = s.get("admin_login_fail_count", 0) + 1
+        update: Dict[str, Any] = {"admin_login_fail_count": fail_count}
+        if fail_count >= config.ADMIN_LOGIN_MAX_ATTEMPTS:
+            update["admin_locked_until"] = (
+                datetime.now(timezone.utc) + timedelta(seconds=config.ADMIN_LOGIN_LOCKOUT_SECONDS)
+            ).isoformat()
+            update["admin_login_fail_count"] = 0
+            logger.warning("admin panel locked out after repeated failed PIN attempts")
+        await db.settings.update_one({"id": "global"}, {"$set": update})
+        raise HTTPException(401, "Wrong admin PIN")
+    if s.get("admin_login_fail_count"):
+        await db.settings.update_one({"id": "global"}, {"$set": {"admin_login_fail_count": 0}})
+    return s
+
+async def require_admin(x_admin_pin: Optional[str] = Header(None)) -> Dict[str, Any]:
+    return await check_admin_pin(x_admin_pin)
+
 @api.post("/admin/login")
 async def admin_login(body: AdminLogin):
-    s = await get_settings()
-    if body.pin != s.get("admin_pin", "0000"):
-        raise HTTPException(401, "Wrong admin PIN")
+    await check_admin_pin(body.pin)
     return {"ok": True}
 
 @api.get("/admin/settings")
-async def get_admin_settings(x_admin_pin: Optional[str] = Header(None)):
-    s = await get_settings()
-    if x_admin_pin != s.get("admin_pin", "0000"):
-        raise HTTPException(401, "Unauthorized")
-    return {"otp_provider": s["otp_provider"], "admin_pin_set": True}
+async def get_admin_settings(s: Dict[str, Any] = Depends(require_admin)):
+    return {
+        "otp_provider": s["otp_provider"],
+        "admin_pin_set": True,
+        "twilio_configured": config.TWILIO_CONFIGURED,
+    }
 
 @api.put("/admin/settings")
-async def update_admin_settings(body: AdminSettingsUpdate, x_admin_pin: Optional[str] = Header(None)):
-    s = await get_settings()
-    if x_admin_pin != s.get("admin_pin", "0000"):
-        raise HTTPException(401, "Unauthorized")
+async def update_admin_settings(body: AdminSettingsUpdate, s: Dict[str, Any] = Depends(require_admin)):
     update: Dict[str, Any] = {}
     if body.otp_provider in ("dev", "twilio"):
+        if body.otp_provider == "twilio" and not config.TWILIO_CONFIGURED:
+            raise HTTPException(
+                400,
+                "Twilio isn't configured on the server. Set TWILIO_ACCOUNT_SID, "
+                "TWILIO_AUTH_TOKEN, and TWILIO_MESSAGING_SERVICE_SID or "
+                "TWILIO_FROM_NUMBER, then try again.",
+            )
         update["otp_provider"] = body.otp_provider
-    if body.admin_pin and re.match(r"^\d{4,8}$", body.admin_pin):
-        update["admin_pin"] = body.admin_pin
+    if body.admin_pin:
+        if not re.match(r"^\d{6,10}$", body.admin_pin):
+            raise HTTPException(400, "Admin PIN must be 6-10 digits")
+        update["admin_pin_hash"] = hash_pin(body.admin_pin)
     if update:
         await db.settings.update_one({"id": "global"}, {"$set": update})
     s = await get_settings()
@@ -841,6 +958,7 @@ async def on_startup():
     await db.products.create_index([("seller_id", 1), ("created_at", -1)])
     await db.groups.create_index([("seller_id", 1)])
     await db.orders.create_index([("seller_id", 1), ("created_at", -1)])
+    await db.otp_codes.create_index("mobile_number", unique=True)
     # One-time normalization: rewrite any legacy presigned/direct object-store URLs
     # in products to the stable proxy form so they survive future write-backs.
     async for p in db.products.find({"image_urls": {"$exists": True, "$ne": []}}, {"id": 1, "image_urls": 1}):

@@ -6,31 +6,31 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import { FormField } from '@/src/components/FormField';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
-import { getAdminPin, setAdminPin } from '@/src/api/client';
-import { BACKEND_URL } from '@/src/config';
-
-// Resolved in src/config.ts (runtime override, build-time env, same origin, dev host).
-const BASE = BACKEND_URL;
+import { api, getAdminPin, setAdminPin } from '@/src/api/client';
 
 export default function Admin() {
   const router = useRouter();
   const [authed, setAuthed] = useState(false);
   const [pin, setPin] = useState('');
   const [provider, setProvider] = useState<'dev' | 'twilio'>('dev');
+  const [twilioConfigured, setTwilioConfigured] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [newPin, setNewPin] = useState('');
+  const [togglingProvider, setTogglingProvider] = useState(false);
 
   const login = async () => {
     setErr(null);
     try {
       setLoading(true);
-      const res = await fetch(`${BASE}/api/admin/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
-      if (!res.ok) throw new Error('Wrong admin PIN');
+      await api('/admin/login', { method: 'POST', auth: false, body: { pin } });
       await setAdminPin(pin);
-      const r = await fetch(`${BASE}/api/admin/settings`, { headers: { 'x-admin-pin': pin } });
-      const s = await r.json();
+      const s = await api<{ otp_provider: 'dev' | 'twilio'; twilio_configured: boolean }>('/admin/settings', {
+        auth: false,
+        headers: { 'x-admin-pin': pin },
+      });
       setProvider(s.otp_provider);
+      setTwilioConfigured(s.twilio_configured);
       setAuthed(true);
     } catch (e: any) {
       setErr(e.message);
@@ -39,22 +39,34 @@ export default function Admin() {
 
   const toggleProvider = async (value: boolean) => {
     const next = value ? 'twilio' : 'dev';
-    const p = await getAdminPin();
-    if (next === 'twilio') {
-      Alert.alert('Twilio not configured', 'Twilio is a scaffold for now. Add Twilio credentials to backend .env before enabling. Keeping DEV mode for testing.');
+    if (next === 'twilio' && !twilioConfigured) {
+      Alert.alert(
+        'Twilio not configured',
+        "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER on the backend, then try again."
+      );
       return;
     }
-    setProvider(next);
-    await fetch(`${BASE}/api/admin/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-pin': p || '' }, body: JSON.stringify({ otp_provider: next }) });
+    const p = await getAdminPin();
+    try {
+      setTogglingProvider(true);
+      await api('/admin/settings', { method: 'PUT', auth: false, headers: { 'x-admin-pin': p || '' }, body: { otp_provider: next } });
+      setProvider(next);
+    } catch (e: any) {
+      Alert.alert('Could not switch provider', e.message);
+    } finally { setTogglingProvider(false); }
   };
 
   const changeAdminPin = async () => {
-    if (!/^\d{4,8}$/.test(newPin)) { Alert.alert('Invalid PIN', '4-8 digits'); return; }
+    if (!/^\d{6,10}$/.test(newPin)) { Alert.alert('Invalid PIN', '6-10 digits'); return; }
     const p = await getAdminPin();
-    await fetch(`${BASE}/api/admin/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-pin': p || '' }, body: JSON.stringify({ admin_pin: newPin }) });
-    await setAdminPin(newPin);
-    setNewPin('');
-    Alert.alert('Updated', 'Admin PIN updated.');
+    try {
+      await api('/admin/settings', { method: 'PUT', auth: false, headers: { 'x-admin-pin': p || '' }, body: { admin_pin: newPin } });
+      await setAdminPin(newPin);
+      setNewPin('');
+      Alert.alert('Updated', 'Admin PIN updated.');
+    } catch (e: any) {
+      Alert.alert('Could not update PIN', e.message);
+    }
   };
 
   return (
@@ -78,13 +90,16 @@ export default function Admin() {
               <View style={styles.card}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle}>SMS OTP (Twilio)</Text>
-                  <Text style={styles.cardSub}>{provider === 'dev' ? 'DEV MODE — uses code 123456 for all signups' : 'Live — sends SMS via Twilio'}</Text>
+                  <Text style={styles.cardSub}>
+                    {provider === 'dev' ? 'DEV MODE — uses a fixed code for all signups' : 'Live — sends a real SMS code via Twilio'}
+                  </Text>
+                  {!twilioConfigured ? <Text style={styles.cardWarn}>Twilio isn&apos;t configured on the server yet.</Text> : null}
                 </View>
-                <Switch testID="admin-twilio-toggle" value={provider === 'twilio'} onValueChange={toggleProvider} />
+                <Switch testID="admin-twilio-toggle" value={provider === 'twilio'} onValueChange={toggleProvider} disabled={togglingProvider} />
               </View>
               <View style={{ height: 16 }} />
               <Text style={styles.heading}>Change admin PIN</Text>
-              <FormField testID="admin-new-pin-input" label="New PIN (4-8 digits)" keyboardType="number-pad" secureTextEntry value={newPin} onChangeText={setNewPin} />
+              <FormField testID="admin-new-pin-input" label="New PIN (6-10 digits)" keyboardType="number-pad" secureTextEntry value={newPin} onChangeText={setNewPin} />
               <PrimaryButton testID="admin-change-pin-btn" title="Update admin PIN" onPress={changeAdminPin} />
             </>
           )}
@@ -103,4 +118,5 @@ const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.color.surfaceSecondary, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: theme.color.border },
   cardTitle: { fontSize: 15, fontWeight: '700' },
   cardSub: { color: theme.color.onSurfaceMuted, fontSize: 12, marginTop: 2 },
+  cardWarn: { color: theme.color.error, fontSize: 11, marginTop: 4 },
 });
