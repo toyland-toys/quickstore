@@ -7,6 +7,7 @@ import { theme } from '@/src/theme';
 import { FormField } from '@/src/components/FormField';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { api } from '@/src/api/client';
+import { publicShopOriginDisplay } from '@/src/config';
 
 export default function HandleScreen() {
   const router = useRouter();
@@ -53,7 +54,7 @@ export default function HandleScreen() {
           <Text style={styles.title}>Claim your shop handle</Text>
           <Text style={styles.subtitle}>This becomes your public storefront URL.</Text>
           <View style={styles.urlBox}>
-            <Text style={styles.urlPrefix}>yourdomain.com/</Text>
+            <Text style={styles.urlPrefix}>{publicShopOriginDisplay()}/</Text>
             <Text style={styles.urlHandle}>{handle || 'yourshop'}</Text>
           </View>
           <FormField

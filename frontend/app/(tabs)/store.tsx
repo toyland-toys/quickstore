@@ -8,10 +8,7 @@ import { theme, BRAND_COLORS } from '@/src/theme';
 import { FormField } from '@/src/components/FormField';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { api, clearToken } from '@/src/api/client';
-import { BACKEND_URL } from '@/src/config';
-
-// Resolved in src/config.ts (runtime override, build-time env, same origin, dev host).
-const BASE = BACKEND_URL;
+import { publicShopOrigin, publicShopOriginDisplay } from '@/src/config';
 
 export default function StoreSettings() {
   const router = useRouter();
@@ -80,8 +77,8 @@ export default function StoreSettings() {
   };
 
   const handle = me?.handle || '';
-  const url = `${BASE}/api/shop/${handle}`;
-  const displayUrl = `yourdomain.com/shop/${handle}`;
+  const url = `${publicShopOrigin()}/${handle}`;
+  const displayUrl = `${publicShopOriginDisplay()}/${handle}`;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

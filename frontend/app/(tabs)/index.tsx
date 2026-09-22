@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import { api } from '@/src/api/client';
+import { publicShopOriginDisplay } from '@/src/config';
 
 export default function Home() {
   const router = useRouter();
@@ -36,7 +37,7 @@ export default function Home() {
           <View>
             <Text style={styles.hello}>Hello,</Text>
             <Text style={styles.shopName} testID="home-shop-name">{me?.shop?.title || me?.handle || 'your shop'}</Text>
-            <Text style={styles.handleLine}>yourdomain.com/{me?.handle || '—'}</Text>
+            <Text style={styles.handleLine}>{publicShopOriginDisplay()}/{me?.handle || '—'}</Text>
           </View>
           <Pressable testID="home-admin-btn" onPress={() => router.push('/admin')} style={styles.iconBtn}>
             <Ionicons name="settings-outline" size={22} color={theme.color.onSurface} />

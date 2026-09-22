@@ -7,6 +7,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme, STATUS_COLORS } from '@/src/theme';
 import { api } from '@/src/api/client';
+import { publicShopOriginDisplay } from '@/src/config';
 
 const W = Dimensions.get('window').width;
 
@@ -39,7 +40,7 @@ export default function StorefrontPreview() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
         <Pressable testID="preview-back" onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
-        <View style={styles.urlBar}><Ionicons name="lock-closed" size={11} color={theme.color.onSurfaceMuted} /><Text style={styles.urlText}>yourdomain.com/{data.seller.handle}</Text></View>
+        <View style={styles.urlBar}><Ionicons name="lock-closed" size={11} color={theme.color.onSurfaceMuted} /><Text style={styles.urlText}>{publicShopOriginDisplay()}/{data.seller.handle}</Text></View>
         <Pressable testID="preview-refresh" onPress={load}><Ionicons name="refresh" size={22} color={theme.color.onSurface} /></Pressable>
       </View>
       <ScrollView style={styles.frame} contentContainerStyle={{ paddingBottom: 40 }}>

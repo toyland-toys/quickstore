@@ -97,3 +97,28 @@ export function apiUrl(path: string): string {
   const suffix = path.startsWith('/') ? path : `/${path}`;
   return `${BACKEND_URL}${suffix}`;
 }
+
+/**
+ * Origin buyers should use for a seller's public storefront.
+ *
+ * On web this is simply the current origin: nginx (see frontend/nginx.conf)
+ * proxies a bare "/{handle}" on this same origin to the backend's storefront
+ * route, so whatever domain the seller is viewing the app from is already the
+ * domain buyers should use. No separate "public domain" setting to keep in
+ * sync — it's automatically right whether that's a mapped custom domain, the
+ * onrender.com URL, or a preview deploy.
+ *
+ * Native builds have no such "current origin" a buyer would ever visit, so
+ * this falls back to the backend's own /api/shop route, which works standalone.
+ */
+export function publicShopOrigin(): string {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return `${BACKEND_URL}/api/shop`;
+}
+
+/** publicShopOrigin() without the scheme, for compact on-screen display. */
+export function publicShopOriginDisplay(): string {
+  return publicShopOrigin().replace(/^https?:\/\//, '');
+}
