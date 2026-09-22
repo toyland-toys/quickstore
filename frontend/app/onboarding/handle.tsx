@@ -53,7 +53,7 @@ export default function HandleScreen() {
           <Text style={styles.title}>Claim your shop handle</Text>
           <Text style={styles.subtitle}>This becomes your public storefront URL.</Text>
           <View style={styles.urlBox}>
-            <Text style={styles.urlPrefix}>yourdomain.com/</Text>
+            <Text style={styles.urlPrefix}>nowsell.online/</Text>
             <Text style={styles.urlHandle}>{handle || 'yourshop'}</Text>
           </View>
           <FormField
