@@ -1,0 +1,105 @@
+# One-command build + deploy to Cloud Run.
+#
+# One-time setup: Artifact Registry repo, MongoDB Atlas, GCS bucket, and the
+# MONGO_URL / JWT_SECRET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY secrets in
+# Secret Manager. See GOOGLE_CLOUD_DEPLOY.md for the full walkthrough.
+#
+# Usage:
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_BUCKET=your-bucket-name
+#
+# Re-run any time to redeploy the latest code to both services.
+
+substitutions:
+  _REGION: us-central1
+  _REPO: quickstore
+  _BUCKET: your-bucket-name
+
+steps:
+  # Backend image
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:latest
+      - ./backend
+    id: build-backend
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend
+    id: push-backend
+    waitFor: [build-backend]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - quickstore-backend
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:$SHORT_SHA
+      - --region=${_REGION}
+      - --allow-unauthenticated
+      - --port=8000
+      - --set-env-vars=APP_ENV=production,DB_NAME=quicksell,STORAGE_BACKEND=s3,S3_BUCKET=${_BUCKET},S3_ENDPOINT_URL=https://storage.googleapis.com,S3_REGION=auto
+      - --update-secrets=MONGO_URL=MONGO_URL:latest,JWT_SECRET=JWT_SECRET:latest,S3_ACCESS_KEY_ID=S3_ACCESS_KEY_ID:latest,S3_SECRET_ACCESS_KEY=S3_SECRET_ACCESS_KEY:latest
+    id: deploy-backend
+    waitFor: [push-backend]
+
+  # Look up the backend URL so the frontend can be pointed at it.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud run services describe quickstore-backend \
+          --region=${_REGION} --format='value(status.url)' > /workspace/backend_url.txt
+    id: get-backend-url
+    waitFor: [deploy-backend]
+
+  # Frontend image
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:latest
+      - ./frontend
+    id: build-frontend
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend
+    id: push-frontend
+    waitFor: [build-frontend]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        BACKEND_URL=$(cat /workspace/backend_url.txt)
+        gcloud run deploy quickstore-frontend \
+          --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:$SHORT_SHA \
+          --region=${_REGION} \
+          --allow-unauthenticated \
+          --port=80 \
+          --set-env-vars=FRONTEND_BACKEND_URL=$$BACKEND_URL
+    id: deploy-frontend
+    waitFor: [push-frontend, get-backend-url]
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:latest
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

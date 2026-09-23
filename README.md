@@ -159,6 +159,12 @@ docker compose up -d --build
 Then put a reverse proxy in front for TLS (Caddy, Nginx, or Traefik) pointing at
 `localhost:8080`, and set `CORS_ORIGINS` to your domain.
 
+### Google Cloud
+
+See [`GOOGLE_CLOUD_DEPLOY.md`](GOOGLE_CLOUD_DEPLOY.md) for a full step-by-step
+walkthrough (Cloud Run + MongoDB Atlas + Cloud Storage), plus a ready-made
+`cloudbuild.yaml` for one-command deploys.
+
 ### A managed platform
 
 Render, Fly.io, Railway, Cloud Run, ECS, Azure Container Apps, Heroku, App
